@@ -1,0 +1,21 @@
+{
+  "name": "ecommerce-services-demo",
+  "private": true,
+  "workspaces": [
+    "services/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "dev:edge-api": "npm run dev --workspace=@ecommerce/edge-api",
+    "lint": "eslint . --ext .ts",
+    "typecheck": "tsc --build"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}
