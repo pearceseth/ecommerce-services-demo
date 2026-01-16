@@ -47,14 +47,16 @@ packages/          # Shared libraries (future)
 
 ## Architecture Overview
 
-**Pattern**: Saga Orchestration with Ledger-First Design
+See `engineering-design.md` for comprehensive design documentation including Mermaid diagrams.
+
+**Pattern**: Saga Orchestration with Ledger-First Design + Transactional Outbox
 
 **Services**:
-- **Edge API** - Entry point, handles order requests, payment authorization
-- **Orders Service** - Order creation and management (planned)
-- **Payments Service** - Payment authorization and capture (planned)
-- **Inventory Service** - Stock management and reservation (planned)
-- **Saga Orchestrator** - Polls ledger and coordinates workflows (planned)
+- **Edge API** - Entry point, validation, payment authorization, outbox writes
+- **Orchestrator Service** - Saga execution via LISTEN/NOTIFY, compensation handling
+- **Orders Service** - Order CRUD and status management
+- **Inventory Service** - Stock management with SELECT FOR UPDATE concurrency control
+- **Payments Service** - Mock gateway with configurable delays/failures
 
 **Request Flow**:
 1. **Synchronous Phase**: Ledger entry creation → Payment authorization → Return response
