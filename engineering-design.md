@@ -5,6 +5,7 @@ This is a WIP. This is meant to showcase some design patterns and to learn Types
 1. The systems are split into microservices but share a common database for convenience. Depending on scale and ***budget*** a real system ***might*** want to have a DB per application for the sake of scaling and data segregation. However, this is often a premature optimization. 
 2. Most services are running on a single pod and reference each other directly. There are no load balancers and so no concept here of multiple pods per service (each service is stateless). In a real system each service would use multiple pods to achieve high-availability. 
 3. There is a tradeoff in the way this is built. The user experience is submit a purchase request and get a quick response that only fails if payment authorization fails. If there is an issue fullfilling the order, i.e. there is insufficient stock, this occurs asychronously and a user would need to be notified, presumably via email. That is left unimplemented here.  Some business rules might instead opt for the request to fail ***synchronously*** if there is insufficient stock instead so that the customer would see the issue in a UI when sumbitting the purchse request.
+4. There are no user login or authN/authZ here to keep things simple and would make a good expansion point later. Having users logged in before submitting a purchase request tells the backend their identity securely. The same mechanism could be used on the backend to authorize admin endpoints.
 
 # Engineering Design Document: E-Commerce Order Processing System
 
@@ -105,6 +106,8 @@ graph TB
 
 | Capability | Description |
 |------------|-------------|
+| Add stock | Increases product inventory with audit trail and idempotency |
+| Create product | Adds new products to catalog with optional initial stock |
 | Reserve stock | Atomically decrements stock and creates reservation record |
 | Release stock | Returns reserved quantity to available stock (compensation) |
 | Concurrency control | Uses `SELECT FOR UPDATE` to prevent oversell |
@@ -138,6 +141,7 @@ erDiagram
     products ||--o{ order_ledger_items : references
     products ||--o{ order_items : references
     products ||--o{ inventory_reservations : has
+    products ||--o{ inventory_adjustments : tracks
     orders ||--o{ inventory_reservations : reserves
 
     order_ledger {
@@ -204,6 +208,20 @@ erDiagram
         timestamp released_at
     }
 
+    inventory_adjustments {
+        uuid id PK
+        string idempotency_key UK
+        uuid product_id FK
+        int quantity_change
+        int previous_quantity
+        int new_quantity
+        string reason
+        string reference_id
+        text notes
+        string created_by
+        timestamp created_at
+    }
+
     outbox {
         uuid id PK
         string aggregate_type
@@ -222,7 +240,7 @@ erDiagram
 |---------|--------------|
 | Edge API | `order_ledger`, `order_ledger_items`, `outbox` |
 | Orders Service | `orders`, `order_items` |
-| Inventory Service | `products`, `inventory_reservations` |
+| Inventory Service | `products`, `inventory_reservations`, `inventory_adjustments` |
 | Payments Service | None (stateless mock) |
 
 ### 3.3 Schema Definitions
@@ -290,6 +308,27 @@ CREATE TABLE inventory_reservations (
 
 CREATE INDEX idx_inventory_reservations_order ON inventory_reservations(order_id);
 CREATE INDEX idx_inventory_reservations_status ON inventory_reservations(status);
+```
+
+#### `inventory_adjustments`
+```sql
+CREATE TABLE inventory_adjustments (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    idempotency_key VARCHAR(255) NOT NULL UNIQUE,
+    product_id UUID NOT NULL REFERENCES products(id),
+    quantity_change INT NOT NULL,
+    previous_quantity INT NOT NULL,
+    new_quantity INT NOT NULL,
+    reason VARCHAR(50) NOT NULL,
+    reference_id VARCHAR(255),
+    notes TEXT,
+    created_by VARCHAR(255),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_inventory_adjustments_product ON inventory_adjustments(product_id);
+CREATE INDEX idx_inventory_adjustments_created ON inventory_adjustments(created_at);
+CREATE INDEX idx_inventory_adjustments_reason ON inventory_adjustments(reason);
 ```
 
 #### `orders`
@@ -793,6 +832,8 @@ ConfirmOrder(order_id) → void
 
 #### Inventory Service
 ```
+AddStock(product_id, quantity, reason, idempotency_key, reference_id?, notes?) → adjustment
+CreateProduct(name, sku, price, initial_stock?) → product
 ReserveStock(order_id, items[]) → reservation_ids[]
 ReleaseStock(order_id) → void
 GetAvailability(product_ids[]) → Map<product_id, quantity>
@@ -803,6 +844,80 @@ GetAvailability(product_ids[]) → Map<product_id, quantity>
 Authorize(user_id, amount, currency, token) → authorization_id
 Capture(authorization_id) → capture_id
 Void(authorization_id) → void
+```
+
+### 8.3 Inventory Service HTTP API
+
+#### Add Stock
+```
+POST /inventory/products/{product_id}/stock
+Content-Type: application/json
+Idempotency-Key: {adjustment_request_id}
+
+Request:
+{
+  "quantity": 100,
+  "reason": "warehouse_receiving",  // warehouse_receiving | manual_adjustment | return_to_stock | correction
+  "reference_id": "PO-2024-001",    // Optional: external reference (PO number, etc.)
+  "notes": "Q1 restock shipment"    // Optional
+}
+
+Response (200 OK):
+{
+  "product_id": "uuid",
+  "sku": "WIDGET-001",
+  "previous_quantity": 50,
+  "added_quantity": 100,
+  "new_quantity": 150,
+  "adjustment_id": "uuid",
+  "created_at": "2024-01-15T10:30:00Z"
+}
+
+Response (404 Not Found):
+{
+  "error": "product_not_found",
+  "message": "Product with ID {product_id} does not exist"
+}
+
+Response (409 Conflict - Idempotent Retry):
+{
+  "adjustment_id": "uuid",
+  "message": "This adjustment was already processed",
+  "previous_quantity": 50,
+  "added_quantity": 100,
+  "new_quantity": 150
+}
+```
+
+#### Create Product
+```
+POST /inventory/products
+Content-Type: application/json
+
+Request:
+{
+  "name": "Widget Pro",
+  "sku": "WIDGET-PRO-001",
+  "price": "29.99",
+  "initial_stock": 100   // Optional: defaults to 0
+}
+
+Response (201 Created):
+{
+  "id": "uuid",
+  "name": "Widget Pro",
+  "sku": "WIDGET-PRO-001",
+  "price": "29.99",
+  "stock_quantity": 100,
+  "created_at": "2024-01-15T10:30:00Z"
+}
+
+Response (409 Conflict):
+{
+  "error": "duplicate_sku",
+  "message": "Product with SKU WIDGET-PRO-001 already exists",
+  "existing_product_id": "uuid"
+}
 ```
 
 ---
