@@ -150,7 +150,7 @@ erDiagram
         uuid user_id
         string email
         string status
-        decimal total_amount
+        int total_amount_cents
         string currency
         string payment_authorization_id
         int retry_count
@@ -164,7 +164,7 @@ erDiagram
         uuid order_ledger_id FK
         uuid product_id FK
         int quantity
-        decimal unit_price
+        int unit_price_cents
         timestamp created_at
     }
 
@@ -173,7 +173,7 @@ erDiagram
         uuid order_ledger_id FK
         uuid user_id
         string status
-        decimal total_amount
+        int total_amount_cents
         string currency
         timestamp created_at
         timestamp updated_at
@@ -184,7 +184,7 @@ erDiagram
         uuid order_id FK
         uuid product_id FK
         int quantity
-        decimal unit_price
+        int unit_price_cents
         timestamp created_at
     }
 
@@ -192,7 +192,7 @@ erDiagram
         uuid id PK
         string name
         string sku UK
-        decimal price
+        int price_cents
         int stock_quantity
         timestamp created_at
         timestamp updated_at
@@ -243,7 +243,28 @@ erDiagram
 | Inventory Service | `products`, `inventory_reservations`, `inventory_adjustments` |
 | Payments Service | None (stateless mock) |
 
-### 3.3 Schema Definitions
+### 3.3 Monetary Values: Integer Cents
+
+All monetary amounts (prices, totals) are stored as **integers representing cents** rather than decimal types.
+
+| Design Choice | Rationale |
+|---------------|-----------|
+| **PostgreSQL DECIMAL is exact** | Unlike floating-point, `DECIMAL`/`NUMERIC` has no precision issues in the database |
+| **JavaScript has floating-point risk** | JS `number` is IEEE 754 double-precision; `0.1 + 0.2 = 0.30000000000000004` |
+| **Integer cents eliminate risk** | All arithmetic stays in integer domain—no precision traps in application code |
+| **Payment API compatibility** | Stripe, Square, and most payment APIs use cents; no conversion needed |
+| **Simplicity** | No need for `decimal.js` or `BigInt` libraries in TypeScript |
+
+**Convention**: All `_amount` and `_price` columns store values in the smallest currency unit (cents for USD). For example, `$99.99` is stored as `9999`.
+
+**Display formatting** happens only at API boundaries:
+```typescript
+const formatCurrency = (cents: number, currency = "USD"): string =>
+  new Intl.NumberFormat("en-US", { style: "currency", currency })
+    .format(cents / 100)
+```
+
+### 3.4 Schema Definitions
 
 #### `order_ledger`
 ```sql
@@ -253,7 +274,7 @@ CREATE TABLE order_ledger (
     user_id UUID NOT NULL,
     email VARCHAR(255) NOT NULL,
     status VARCHAR(50) NOT NULL DEFAULT 'AWAITING_AUTHORIZATION',
-    total_amount DECIMAL(12, 2) NOT NULL,
+    total_amount_cents INT NOT NULL,  -- stored in cents (e.g., 9999 = $99.99)
     currency VARCHAR(3) NOT NULL DEFAULT 'USD',
     payment_authorization_id VARCHAR(255),
     retry_count INT NOT NULL DEFAULT 0,
@@ -273,7 +294,7 @@ CREATE TABLE order_ledger_items (
     order_ledger_id UUID NOT NULL REFERENCES order_ledger(id),
     product_id UUID NOT NULL,
     quantity INT NOT NULL CHECK (quantity > 0),
-    unit_price DECIMAL(12, 2) NOT NULL,
+    unit_price_cents INT NOT NULL,  -- stored in cents
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
 
@@ -286,7 +307,7 @@ CREATE TABLE products (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name VARCHAR(255) NOT NULL,
     sku VARCHAR(100) NOT NULL UNIQUE,
-    price DECIMAL(12, 2) NOT NULL,
+    price_cents INT NOT NULL,  -- stored in cents (e.g., 2999 = $29.99)
     stock_quantity INT NOT NULL DEFAULT 0 CHECK (stock_quantity >= 0),
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
@@ -338,7 +359,7 @@ CREATE TABLE orders (
     order_ledger_id UUID NOT NULL UNIQUE REFERENCES order_ledger(id),
     user_id UUID NOT NULL,
     status VARCHAR(50) NOT NULL DEFAULT 'CREATED',
-    total_amount DECIMAL(12, 2) NOT NULL,
+    total_amount_cents INT NOT NULL,  -- stored in cents
     currency VARCHAR(3) NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
@@ -352,7 +373,7 @@ CREATE TABLE order_items (
     order_id UUID NOT NULL REFERENCES orders(id),
     product_id UUID NOT NULL,
     quantity INT NOT NULL CHECK (quantity > 0),
-    unit_price DECIMAL(12, 2) NOT NULL,
+    unit_price_cents INT NOT NULL,  -- stored in cents
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
 
@@ -815,7 +836,7 @@ Response (200 OK):
   "order": {
     "id": "uuid",
     "items": [...],
-    "total_amount": "99.99",
+    "total_amount_cents": 9999,  // $99.99 in cents
     "currency": "USD"
   }
 }
@@ -833,7 +854,7 @@ ConfirmOrder(order_id) → void
 #### Inventory Service
 ```
 AddStock(product_id, quantity, reason, idempotency_key, reference_id?, notes?) → adjustment
-CreateProduct(name, sku, price, initial_stock?) → product
+CreateProduct(name, sku, price_cents, initial_stock?) → product
 ReserveStock(order_id, items[]) → reservation_ids[]
 ReleaseStock(order_id) → void
 GetAvailability(product_ids[]) → Map<product_id, quantity>
@@ -841,7 +862,7 @@ GetAvailability(product_ids[]) → Map<product_id, quantity>
 
 #### Payments Service (Mock)
 ```
-Authorize(user_id, amount, currency, token) → authorization_id
+Authorize(user_id, amount_cents, currency, token) → authorization_id
 Capture(authorization_id) → capture_id
 Void(authorization_id) → void
 ```
@@ -898,7 +919,7 @@ Request:
 {
   "name": "Widget Pro",
   "sku": "WIDGET-PRO-001",
-  "price": "29.99",
+  "price_cents": 2999,   // $29.99 in cents
   "initial_stock": 100   // Optional: defaults to 0
 }
 
@@ -907,7 +928,7 @@ Response (201 Created):
   "id": "uuid",
   "name": "Widget Pro",
   "sku": "WIDGET-PRO-001",
-  "price": "29.99",
+  "price_cents": 2999,   // $29.99 in cents
   "stock_quantity": 100,
   "created_at": "2024-01-15T10:30:00Z"
 }
