@@ -8,11 +8,86 @@ This is a demo project of an ecommerce backend system meant to learn Typescript 
 
 The system will have a few components:
 
-1. An Edge API 
+1. An Edge API
     For registering user order requests, getting inital payment authorization from the payment service (the actual payment will be faked) and persisting the request in a ledger for durability.
 2. A Payment service
     That will fake payment actions to a 3rd party payment processor and will include randomized failures.
 3. An Order Service
-    For registering orders against a limited set of products. 
-4. A Saga Orchestrator 
-    For ensuring that processing an order submission works in a safe way without losing events. 
+    For registering orders against a limited set of products.
+4. An Inventory Service
+    For managing inventory of each product including concurrency guards to prevent overallocation.
+4. A Saga Orchestrator
+    For ensuring that processing an order submission works in a safe way without losing events.
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js 22+
+- Docker and Docker Compose
+
+### Running with Docker Compose
+
+The easiest way to run the entire stack:
+
+```bash
+# Remove any existing data (to ensure migrations run)
+docker-compose down -v
+
+# Build and start all services
+docker-compose up --build
+```
+
+This starts:
+- **PostgreSQL** on port 5432 (migrations run automatically on first start)
+- **Edge API** on port 3000
+- **Inventory Service** on port 3001
+
+### Running for Local Development
+
+If you prefer to run services locally with hot reload:
+
+```bash
+# 1. Install dependencies
+npm install
+
+# 2. Start PostgreSQL only
+docker-compose up postgres -d
+
+# 3. Run migrations (first time only)
+psql postgres://ecommerce:ecommerce@localhost:5432/ecommerce -f migrations/001_create_products.sql
+
+# 4. Start a service in dev mode
+npm run dev:inventory    # Inventory service on port 3001
+npm run dev:edge-api     # Edge API on port 3000
+```
+
+### Testing the Inventory Service
+
+```bash
+# Create a product
+curl -X POST http://localhost:3001/inventory/products \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Widget Pro",
+    "sku": "WIDGET-PRO-001",
+    "priceCents": 2999,
+    "initialStock": 100
+  }'
+
+# Health check
+curl http://localhost:3001/health
+```
+
+### Running Tests
+
+```bash
+# Run tests for the inventory service
+npm test --workspace=@ecommerce/inventory
+
+# Run with coverage
+npm run test:coverage --workspace=@ecommerce/inventory
+
+# Type check all services
+npm run typecheck
+```

@@ -22,6 +22,14 @@ If during research, any best practices or anti-patterns to avoid are found add t
 
 When done, save the plan in a .agents/plan directory within the target service's directory as a markdown file. Use a filename convention like <featurname>-plan.md
 
+The first section of the document should be a title like "# Implementation Plan: POST /inventory/products - Create Product"
+
+The second section should be a status with a status of "PENDING." For example:
+
+```
+# Status: Pending
+```
+
 ## Report
 
 After creating the Plan, provide:
