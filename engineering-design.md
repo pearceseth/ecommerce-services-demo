@@ -673,6 +673,99 @@ FOR UPDATE;
 | Isolation level | READ COMMITTED | Default, sufficient with explicit locking |
 | Lock timeout | 5 seconds | Fail fast if contention is high |
 
+### 6.5 Atomic Idempotency with CTE
+
+When implementing idempotent operations (like adding stock with an idempotency key), a naive "check-then-insert" pattern has a race condition:
+
+```
+Time    Request A                      Request B
+─────────────────────────────────────────────────────────────
+T1      Check idempotency key
+        → Not found
+T2                                     Check idempotency key
+                                       → Not found
+T3      Do work (update stock)
+T4                                     Do work (update stock) ← DUPLICATE!
+T5      Insert audit record
+T6                                     Insert audit record → FAILS (unique constraint)
+```
+
+Even though the UNIQUE constraint prevents duplicate records, the work (stock update) was performed twice.
+
+#### Solution: Atomic CTE
+
+Use a single SQL statement with Common Table Expressions (CTEs) to perform the idempotency check, the work, and the audit record insertion atomically:
+
+```sql
+WITH check_existing AS (
+  -- Check if this idempotency key was already used
+  SELECT * FROM inventory_adjustments
+  WHERE idempotency_key = $1
+),
+update_stock AS (
+  -- Update stock ONLY if no existing adjustment found
+  UPDATE products
+  SET stock_quantity = stock_quantity + $2, updated_at = NOW()
+  WHERE id = $3
+    AND NOT EXISTS (SELECT 1 FROM check_existing)
+  RETURNING stock_quantity - $2 AS previous_quantity, stock_quantity AS new_quantity
+),
+insert_adjustment AS (
+  -- Insert audit record ONLY if stock was updated
+  INSERT INTO inventory_adjustments (idempotency_key, product_id, quantity_change, ...)
+  SELECT $1, $3, $2, us.previous_quantity, us.new_quantity, ...
+  FROM update_stock us
+  RETURNING *
+)
+SELECT
+  CASE
+    WHEN EXISTS (SELECT 1 FROM check_existing) THEN 'already_exists'
+    WHEN EXISTS (SELECT 1 FROM insert_adjustment) THEN 'created'
+    ELSE 'product_not_found'
+  END AS result_type,
+  -- ... return adjustment data from either check_existing or insert_adjustment
+FROM ...
+```
+
+#### Why This Works
+
+1. **Single Statement Execution**: All CTEs execute as part of one SQL statement. PostgreSQL guarantees consistent snapshot visibility across all CTEs.
+
+2. **Row-Level Locking**: The UPDATE acquires a row lock on the product. If two concurrent requests try to update the same row, one will wait for the other to complete.
+
+3. **Conditional Execution**: The `NOT EXISTS (SELECT 1 FROM check_existing)` clause ensures the UPDATE only runs if no prior adjustment exists. By the time a concurrent request's UPDATE executes, the first request's INSERT will be visible.
+
+4. **Discriminated Result**: The final SELECT returns a `result_type` that tells the application exactly what happened: `created`, `already_exists`, or `product_not_found`.
+
+#### Concurrent Request Behavior
+
+```
+Time    Request A                      Request B
+─────────────────────────────────────────────────────────────
+T1      Execute CTE statement
+        - check_existing: None
+        - update_stock: Acquires row lock, updates stock
+        - insert_adjustment: Inserts record
+        → Returns "created"
+
+T2                                     Execute CTE statement
+                                       - check_existing: Finds A's record
+                                       - update_stock: SKIPPED (check_existing exists)
+                                       - insert_adjustment: SKIPPED (no update_stock row)
+                                       → Returns "already_exists"
+```
+
+Even if both requests start simultaneously, the row lock on `products` during UPDATE serializes them. The second request will see the first's changes and correctly return the existing result.
+
+#### When to Use This Pattern
+
+| Use Case | Recommendation |
+|----------|----------------|
+| Idempotent writes with audit trail | **Use atomic CTE** |
+| Simple read-then-write | SELECT FOR UPDATE is sufficient |
+| High contention scenarios | Consider advisory locks or queuing |
+| Cross-table atomic operations | Atomic CTE or stored procedures |
+
 ---
 
 ## 7. Request Flow

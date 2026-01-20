@@ -116,7 +116,12 @@ describe("Error ADTs", () => {
     it("should have correct _tag", () => {
       const error = new DuplicateAdjustmentError({
         idempotencyKey: "adj-123",
-        existingAdjustmentId: "existing-adj-uuid"
+        existingAdjustment: {
+          adjustmentId: "existing-adj-uuid",
+          previousQuantity: 50,
+          addedQuantity: 100,
+          newQuantity: 150
+        }
       })
 
       expect(error._tag).toBe("DuplicateAdjustmentError")
@@ -125,19 +130,32 @@ describe("Error ADTs", () => {
     it("should include idempotencyKey context", () => {
       const error = new DuplicateAdjustmentError({
         idempotencyKey: "adj-123",
-        existingAdjustmentId: "existing-adj-uuid"
+        existingAdjustment: {
+          adjustmentId: "existing-adj-uuid",
+          previousQuantity: 50,
+          addedQuantity: 100,
+          newQuantity: 150
+        }
       })
 
       expect(error.idempotencyKey).toBe("adj-123")
     })
 
-    it("should include existingAdjustmentId for idempotent response", () => {
+    it("should include existingAdjustment for idempotent response", () => {
       const error = new DuplicateAdjustmentError({
         idempotencyKey: "adj-123",
-        existingAdjustmentId: "existing-adj-uuid"
+        existingAdjustment: {
+          adjustmentId: "existing-adj-uuid",
+          previousQuantity: 50,
+          addedQuantity: 100,
+          newQuantity: 150
+        }
       })
 
-      expect(error.existingAdjustmentId).toBe("existing-adj-uuid")
+      expect(error.existingAdjustment.adjustmentId).toBe("existing-adj-uuid")
+      expect(error.existingAdjustment.previousQuantity).toBe(50)
+      expect(error.existingAdjustment.addedQuantity).toBe(100)
+      expect(error.existingAdjustment.newQuantity).toBe(150)
     })
   })
 })

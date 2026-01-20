@@ -31,9 +31,14 @@ export class InsufficientStockError extends Data.TaggedError("InsufficientStockE
 
 /**
  * Idempotency key was already used for a previous adjustment.
- * Includes the existing adjustment ID for idempotent response.
+ * Includes the full existing adjustment details for idempotent response.
  */
 export class DuplicateAdjustmentError extends Data.TaggedError("DuplicateAdjustmentError")<{
   readonly idempotencyKey: string
-  readonly existingAdjustmentId: string
+  readonly existingAdjustment: {
+    readonly adjustmentId: string
+    readonly previousQuantity: number
+    readonly addedQuantity: number
+    readonly newQuantity: number
+  }
 }> {}

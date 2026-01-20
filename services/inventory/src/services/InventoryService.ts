@@ -1,31 +1,12 @@
 import { Context, Effect } from "effect"
+import { SqlError } from "@effect/sql"
 import type { ProductId } from "../domain/Product.js"
+import type { AddStockRequest, AddStockResponse } from "../domain/Adjustment.js"
 import type {
   DuplicateAdjustmentError,
   InsufficientStockError,
   ProductNotFoundError
 } from "../domain/errors.js"
-
-export interface StockAdjustment {
-  readonly id: string
-  readonly productId: ProductId
-  readonly quantityChange: number
-  readonly previousQuantity: number
-  readonly newQuantity: number
-  readonly reason: string
-  readonly referenceId?: string
-  readonly notes?: string
-  readonly createdAt: Date
-}
-
-export interface AddStockRequest {
-  readonly productId: ProductId
-  readonly quantity: number
-  readonly reason: string
-  readonly idempotencyKey: string
-  readonly referenceId?: string
-  readonly notes?: string
-}
 
 export interface ReserveStockRequest {
   readonly orderId: string
@@ -39,19 +20,21 @@ export class InventoryService extends Context.Tag("InventoryService")<
   InventoryService,
   {
     readonly addStock: (
+      productId: ProductId,
+      idempotencyKey: string,
       request: AddStockRequest
-    ) => Effect.Effect<StockAdjustment, ProductNotFoundError | DuplicateAdjustmentError>
+    ) => Effect.Effect<AddStockResponse, ProductNotFoundError | DuplicateAdjustmentError | SqlError.SqlError>
 
     readonly getAvailability: (
       productId: ProductId
-    ) => Effect.Effect<number, ProductNotFoundError>
+    ) => Effect.Effect<number, ProductNotFoundError | SqlError.SqlError>
 
     readonly reserveStock: (
       request: ReserveStockRequest
-    ) => Effect.Effect<ReadonlyArray<string>, InsufficientStockError | ProductNotFoundError>
+    ) => Effect.Effect<ReadonlyArray<string>, InsufficientStockError | ProductNotFoundError | SqlError.SqlError>
 
     readonly releaseStock: (
       orderId: string
-    ) => Effect.Effect<void>
+    ) => Effect.Effect<void, SqlError.SqlError>
   }
 >() {}

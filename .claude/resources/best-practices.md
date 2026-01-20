@@ -10,6 +10,7 @@ Guidelines and patterns discovered during implementation.
 - Use algebraic data types (ADTs) for domain modeling and error handling
 - Prefer composition over inheritance
 - Make side effects explicit through the Effect type
+- Prefer functional programming style over imperative
 
 ### Algebraic Data Types (ADTs)
 - Use discriminated unions (tagged unions) for types that can be one of several variants
@@ -203,9 +204,35 @@ const createProduct = (request: CreateProductRequest) =>
 - PostgreSQL DECIMAL values come back as strings; parse explicitly
 
 ### Idempotency
-- Use unique constraints (e.g., SKU, idempotency_key) as the final guard against duplicates
-- Check for existence before insert, but rely on DB constraints for race conditions
+- Use unique constraints (e.g., SKU, idempotency_key) as defense-in-depth against duplicates
+- **Avoid check-then-insert patterns** - they have race condition windows where work can be duplicated even if the final insert fails
+- **Use atomic CTE for idempotent writes with side effects** - see engineering-design.md Section 6.5
 - Return existing resource on duplicate rather than error (for true idempotency)
+
+#### Check-Then-Insert Anti-Pattern
+```typescript
+// DON'T: Race condition window between check and insert
+const existing = yield* repo.findByIdempotencyKey(key)
+if (Option.isSome(existing)) {
+  return existing.value  // Idempotent return
+}
+yield* doExpensiveWork()  // ← Can run twice if concurrent requests!
+yield* repo.insert(...)   // Second insert fails, but work already done
+```
+
+#### Atomic CTE Pattern
+```typescript
+// DO: Single SQL statement handles check, work, and insert atomically
+const result = yield* repo.addStockAtomic({
+  idempotencyKey,
+  productId,
+  quantity,
+  ...
+})
+// result._tag is "Created" | "AlreadyExists" | "ProductNotFound"
+```
+
+The atomic CTE executes the idempotency check, the work (e.g., stock update), and the audit record insert in a single SQL statement. Row-level locking ensures concurrent requests are serialized.
 
 ## Anti-Patterns to Avoid
 

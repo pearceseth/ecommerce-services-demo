@@ -1,6 +1,7 @@
-import { Context, Effect } from "effect"
+import { Context, Effect, Option } from "effect"
+import { SqlError } from "@effect/sql"
 import type { ProductId } from "../domain/Product.js"
-import type { StockAdjustment } from "../services/InventoryService.js"
+import type { InventoryAdjustment, AdjustmentReason } from "../domain/Adjustment.js"
 
 export interface CreateAdjustmentRow {
   readonly idempotencyKey: string
@@ -8,9 +9,10 @@ export interface CreateAdjustmentRow {
   readonly quantityChange: number
   readonly previousQuantity: number
   readonly newQuantity: number
-  readonly reason: string
-  readonly referenceId?: string
-  readonly notes?: string
+  readonly reason: AdjustmentReason
+  readonly referenceId: string | null
+  readonly notes: string | null
+  readonly createdBy: string | null
 }
 
 export interface CreateReservationRow {
@@ -22,9 +24,9 @@ export interface CreateReservationRow {
 export class InventoryRepository extends Context.Tag("InventoryRepository")<
   InventoryRepository,
   {
-    readonly insertAdjustment: (row: CreateAdjustmentRow) => Effect.Effect<StockAdjustment>
-    readonly findAdjustmentByKey: (key: string) => Effect.Effect<StockAdjustment | null>
-    readonly insertReservation: (row: CreateReservationRow) => Effect.Effect<string>
-    readonly releaseReservations: (orderId: string) => Effect.Effect<void>
+    readonly insertAdjustment: (row: CreateAdjustmentRow) => Effect.Effect<InventoryAdjustment, SqlError.SqlError>
+    readonly findAdjustmentByKey: (key: string) => Effect.Effect<Option.Option<InventoryAdjustment>, SqlError.SqlError>
+    readonly insertReservation: (row: CreateReservationRow) => Effect.Effect<string, SqlError.SqlError>
+    readonly releaseReservations: (orderId: string) => Effect.Effect<void, SqlError.SqlError>
   }
 >() {}
