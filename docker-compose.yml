@@ -16,6 +16,16 @@ services:
       timeout: 5s
       retries: 5
 
+  observability:
+    image: grafana/otel-lgtm:latest
+    ports:
+      - "3005:3000"   # Grafana UI
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+
   edge-api:
     build:
       context: ./services/edge-api
@@ -25,9 +35,13 @@ services:
     environment:
       PORT: 3000
       DATABASE_URL: postgres://ecommerce:ecommerce@postgres:5432/ecommerce
+      OTEL_SERVICE_NAME: edge-api
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://observability:4318
     depends_on:
       postgres:
         condition: service_healthy
+      observability:
+        condition: service_started
 
   inventory:
     build:
@@ -42,9 +56,13 @@ services:
       DATABASE_NAME: ecommerce
       DATABASE_USER: ecommerce
       DATABASE_PASSWORD: ecommerce
+      OTEL_SERVICE_NAME: inventory-service
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://observability:4318
     depends_on:
       postgres:
         condition: service_healthy
+      observability:
+        condition: service_started
 
 volumes:
   postgres_data:

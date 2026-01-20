@@ -14,6 +14,8 @@ const createProduct = Effect.gen(function* () {
   const productService = yield* ProductService
   const product = yield* productService.create(body)
 
+  yield* Effect.logInfo("Product created", { productId: product.id, sku: product.sku })
+
   // Map domain model to response
   const response = {
     id: product.id,
@@ -26,6 +28,7 @@ const createProduct = Effect.gen(function* () {
 
   return HttpServerResponse.json(response, { status: 201 })
 }).pipe(
+  Effect.withSpan("POST /inventory/products"),
   Effect.flatten,
   // Error handling - map domain errors to HTTP responses
   Effect.catchTags({

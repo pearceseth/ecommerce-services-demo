@@ -5,6 +5,7 @@ import { createServer } from "node:http"
 import { HealthRoutes } from "./api/health.js"
 import { ProductRoutes } from "./api/products.js"
 import { AppLive } from "./layers.js"
+import { TelemetryLive } from "./telemetry.js"
 
 const rootRoute = HttpRouter.empty.pipe(
   HttpRouter.get(
@@ -27,7 +28,8 @@ const HttpLive = router.pipe(
       port: Number(process.env.PORT) || 3001
     })
   ),
-  Layer.provide(AppLive)
+  Layer.provide(AppLive),
+  Layer.provide(TelemetryLive)
 )
 
 Layer.launch(HttpLive).pipe(NodeRuntime.runMain)

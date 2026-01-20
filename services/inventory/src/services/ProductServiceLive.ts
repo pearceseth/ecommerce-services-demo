@@ -1,4 +1,4 @@
-import { Layer, Effect, Option, pipe } from "effect"
+import { Layer, Effect, Option } from "effect"
 import { ProductService } from "./ProductService.js"
 import { ProductRepository } from "../repositories/ProductRepository.js"
 import { DuplicateSkuError, ProductNotFoundError } from "../domain/errors.js"

@@ -40,6 +40,7 @@ docker-compose up --build
 
 This starts:
 - **PostgreSQL** on port 5432 (migrations run automatically on first start)
+- **Grafana LGTM** on port 3005 (logs, traces, metrics)
 - **Edge API** on port 3000
 - **Inventory Service** on port 3001
 
@@ -91,3 +92,14 @@ npm run test:coverage --workspace=@ecommerce/inventory
 # Type check all services
 npm run typecheck
 ```
+
+### Observability
+
+The stack includes a Grafana LGTM (Loki, Grafana, Tempo, Mimir) container for observability:
+
+- **Grafana UI**: http://localhost:3005 (no login required)
+- **Logs**: View in Grafana → Explore → Loki
+- **Traces**: View in Grafana → Explore → Tempo
+- **Metrics**: View in Grafana → Explore → Prometheus
+
+Services export telemetry via OpenTelemetry Protocol (OTLP) to the observability container.
