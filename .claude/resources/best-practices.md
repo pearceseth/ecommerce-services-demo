@@ -276,6 +276,31 @@ const createProduct = (request: CreateProductRequest) =>
 - Map snake_case database columns to camelCase domain properties in repository layer
 - PostgreSQL DECIMAL values come back as strings; parse explicitly
 
+### Transactions in @effect/sql-pg
+**Multiple SQL statements in `Effect.gen` do NOT automatically share a transaction.** Each statement gets its own connection from the pool. You MUST use `sql.withTransaction()` to group operations atomically.
+
+```typescript
+// WRONG: Each statement runs in its own transaction
+const broken = Effect.gen(function* () {
+  const sql = yield* PgClient.PgClient
+  yield* sql`SELECT * FROM products FOR UPDATE`  // Lock released immediately
+  yield* sql`UPDATE products SET ...`            // No lock protection!
+})
+
+// CORRECT: All statements share one transaction
+const correct = Effect.gen(function* () {
+  const sql = yield* PgClient.PgClient
+  yield* sql.withTransaction(
+    Effect.gen(function* () {
+      yield* sql`SELECT * FROM products FOR UPDATE`  // Lock held
+      yield* sql`UPDATE products SET ...`            // Protected by lock
+    })  // Lock released on commit
+  )
+})
+```
+
+This is critical when using `SELECT FOR UPDATE` for concurrency control - without `withTransaction`, locks are released between statements and race conditions become possible.
+
 ### Idempotency
 - Use unique constraints (e.g., SKU, idempotency_key) as defense-in-depth against duplicates
 - **Avoid check-then-insert patterns** - they have race condition windows where work can be duplicated even if the final insert fails
@@ -306,6 +331,43 @@ const result = yield* repo.addStockAtomic({
 ```
 
 The atomic CTE executes the idempotency check, the work (e.g., stock update), and the audit record insert in a single SQL statement. Row-level locking ensures concurrent requests are serialized.
+
+## REST API Design
+
+### Use Nouns, Not Verbs for Endpoints
+REST endpoints should represent resources (nouns), not actions (verbs). The HTTP method provides the action.
+
+**Good (Resource-oriented):**
+```
+POST   /inventory/reservations      # Create a reservation
+GET    /inventory/reservations/{id} # Get a reservation
+DELETE /inventory/reservations/{id} # Delete/release a reservation
+GET    /products                    # List products
+POST   /products                    # Create a product
+```
+
+**Avoid (RPC-style):**
+```
+POST /inventory/reserve      # Verb-based, RPC-style
+POST /inventory/release      # Verb-based, RPC-style
+POST /createProduct          # Verb-based, RPC-style
+```
+
+### HTTP Methods Map to CRUD Operations
+| Method | Action | Example |
+|--------|--------|---------|
+| POST | Create | `POST /products` creates a product |
+| GET | Read | `GET /products/{id}` retrieves a product |
+| PUT | Replace | `PUT /products/{id}` replaces entire product |
+| PATCH | Update | `PATCH /products/{id}` updates specific fields |
+| DELETE | Delete | `DELETE /products/{id}` removes a product |
+
+### Collection vs Item URLs
+- Collection: `/products` (plural noun)
+- Item: `/products/{id}` (collection + identifier)
+- Sub-resource: `/orders/{id}/items` (nested resource)
+
+---
 
 ## Anti-Patterns to Avoid
 

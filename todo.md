@@ -11,9 +11,9 @@
 ### Endpoints
 - [x] POST /inventory/products - Create product with optional initial stock
 - [x] POST /inventory/products/{product_id}/stock - Add stock with idempotency
-- [ ] GET /inventory/products/{product_id}/availability - Query stock availability
-- [ ] POST /inventory/reserve - Reserve stock for order (SELECT FOR UPDATE)
-- [ ] POST /inventory/release - Release reservation (compensation)
+- [x] GET /inventory/products/{product_id}/availability - Query stock availability
+- [ ] POST /inventory/reservations - Reserve stock for order (SELECT FOR UPDATE)
+- [ ] DELETE /inventory/reservations/{order_id} - Release reservation (compensation)
 
 ---
 
