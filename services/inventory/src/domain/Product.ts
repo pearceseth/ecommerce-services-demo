@@ -3,6 +3,11 @@ import { Schema } from "effect"
 export const ProductId = Schema.UUID.pipe(Schema.brand("ProductId"))
 export type ProductId = typeof ProductId.Type
 
+// Schema for extracting and validating product_id from path parameters
+export const ProductIdParams = Schema.Struct({
+  product_id: ProductId
+})
+
 export class Product extends Schema.Class<Product>("Product")({
   id: ProductId,
   name: Schema.String,

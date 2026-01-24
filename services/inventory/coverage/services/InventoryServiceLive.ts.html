@@ -23,30 +23,30 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">88.23% </span>
+                <span class="strong">88.88% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>15/17</span>
+                <span class='fraction'>16/18</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>3/3</span>
+                <span class='fraction'>0/0</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">77.77% </span>
+                <span class="strong">83.33% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>7/9</span>
+                <span class='fraction'>10/12</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">88.23% </span>
+                <span class="strong">88.88% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>15/17</span>
+                <span class='fraction'>16/18</span>
             </div>
         
             
@@ -148,8 +148,7 @@
 <a name='L83'></a><a href='#L83'>83</a>
 <a name='L84'></a><a href='#L84'>84</a>
 <a name='L85'></a><a href='#L85'>85</a>
-<a name='L86'></a><a href='#L86'>86</a>
-<a name='L87'></a><a href='#L87'>87</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L86'></a><a href='#L86'>86</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -188,12 +187,7 @@
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -217,6 +211,10 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">5x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-yes">2x</span>
@@ -235,7 +233,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import { Layer, Effect, Option } from "effect"
+<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import { Layer, Effect, Option, Match } from "effect"
 import { InventoryService } from "./InventoryService.js"
 import { StockAdjustmentRepository } from "../repositories/StockAdjustmentRepository.js"
 import { ProductRepository } from "../repositories/ProductRepository.js"
@@ -268,38 +266,37 @@ export const InventoryServiceLive = Layer.effect(
             createdBy: null // Could be populated from auth context in future
           })
 &nbsp;
-          // Handle the three possible outcomes using pattern matching
-          switch (result._tag) {
-            case "ProductNotFound":
-              return yield* Effect.fail(new ProductNotFoundError({
-                productId,
-                searchedBy: "id"
-              }))
-&nbsp;
-            case "AlreadyExists":
-              // Return as error - the API handler converts to 409 with original result
-              return yield* Effect.fail(new DuplicateAdjustmentError({
+          // Handle the three possible outcomes using exhaustive pattern matching
+          const response = Match.value(result).pipe(
+            Match.tag("ProductNotFound", () =&gt;
+              Effect.fail(new ProductNotFoundError({ productId, searchedBy: "id" }))
+            ),
+            Match.tag("AlreadyExists", ({ adjustment }) =&gt;
+              Effect.fail(new DuplicateAdjustmentError({
                 idempotencyKey,
                 existingAdjustment: {
-                  adjustmentId: result.adjustment.id,
-                  previousQuantity: result.adjustment.previousQuantity,
-                  addedQuantity: result.adjustment.quantityChange,
-                  newQuantity: result.adjustment.newQuantity
+                  adjustmentId: adjustment.id,
+                  previousQuantity: adjustment.previousQuantity,
+                  addedQuantity: adjustment.quantityChange,
+                  newQuantity: adjustment.newQuantity
                 }
               }))
+            ),
+            Match.tag("Created", ({ adjustment, sku }) =&gt;
+              Effect.succeed({
+                productId: adjustment.productId,
+                sku,
+                previousQuantity: adjustment.previousQuantity,
+                addedQuantity: adjustment.quantityChange,
+                newQuantity: adjustment.newQuantity,
+                adjustmentId: adjustment.id as AdjustmentId,
+                createdAt: adjustment.createdAt
+              } as AddStockResponse)
+            ),
+            Match.exhaustive
+          )
 &nbsp;
-            case "Created":
-              // Success - build and return response
-              return {
-                productId: result.adjustment.productId,
-                sku: result.sku,
-                previousQuantity: result.adjustment.previousQuantity,
-                addedQuantity: result.adjustment.quantityChange,
-                newQuantity: result.adjustment.newQuantity,
-                adjustmentId: result.adjustment.id as AdjustmentId,
-                createdAt: result.adjustment.createdAt
-              } as AddStockResponse
-          }
+          return yield* response
         }),
 &nbsp;
       getAvailability: (productId: ProductId) =&gt;
@@ -328,7 +325,7 @@ export const InventoryServiceLive = Layer.effect(
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-01-20T22:33:26.955Z
+                at 2026-01-24T17:36:51.575Z
             </div>
         <script src="../prettify.js"></script>
         <script>

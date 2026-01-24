@@ -2,7 +2,7 @@ import { HttpRouter, HttpServerRequest, HttpServerResponse } from "@effect/platf
 import type { HttpServerError } from "@effect/platform"
 import { SqlError } from "@effect/sql"
 import { Effect, DateTime, ParseResult } from "effect"
-import { CreateProductRequest, ProductId } from "../domain/Product.js"
+import { CreateProductRequest, ProductIdParams } from "../domain/Product.js"
 import { AddStockRequest } from "../domain/Adjustment.js"
 import { ProductService } from "../services/ProductService.js"
 import { InventoryService } from "../services/InventoryService.js"
@@ -81,32 +81,80 @@ const createProduct = Effect.gen(function* () {
   })
 )
 
-// UUID regex pattern for validation
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+// GET /products/:product_id/availability - Get product availability
+const getAvailability = Effect.gen(function* () {
+  // Extract and validate product_id from path parameters using schema
+  const { product_id: productId } = yield* HttpRouter.schemaPathParams(ProductIdParams)
+
+  // Get product to retrieve SKU (via ProductService)
+  const productService = yield* ProductService
+  const product = yield* productService.findById(productId)
+
+  // Get stock availability (via InventoryService)
+  const inventoryService = yield* InventoryService
+  const stockQuantity = yield* inventoryService.getAvailability(productId)
+
+  yield* Effect.logInfo("Availability queried", {
+    productId,
+    sku: product.sku,
+    stockQuantity
+  })
+
+  // Build and return response (snake_case for JSON)
+  const response = {
+    product_id: productId,
+    sku: product.sku,
+    stock_quantity: stockQuantity,
+    available: stockQuantity > 0
+  }
+
+  return HttpServerResponse.json(response, { status: 200 })
+}).pipe(
+  Effect.withSpan("GET /inventory/products/:product_id/availability"),
+  Effect.flatten,
+  Effect.catchTags({
+    // Path parameter validation errors (400 Bad Request)
+    ParseError: (_error: ParseResult.ParseError) =>
+      HttpServerResponse.json(
+        {
+          error: "validation_error",
+          message: "Invalid product_id format. Must be a valid UUID."
+        },
+        { status: 400 }
+      ),
+
+    // Product not found (404)
+    ProductNotFoundError: (error: ProductNotFoundError) =>
+      HttpServerResponse.json(
+        {
+          error: "product_not_found",
+          message: `Product with ID ${error.productId} does not exist`
+        },
+        { status: 404 }
+      ),
+
+    // SQL errors (500)
+    SqlError: (error: SqlError.SqlError) =>
+      Effect.gen(function* () {
+        yield* Effect.logError("Database error in getAvailability", { error })
+        return HttpServerResponse.json(
+          {
+            error: "internal_error",
+            message: "An unexpected error occurred"
+          },
+          { status: 500 }
+        )
+      }).pipe(Effect.flatten)
+  })
+)
 
 // POST /products/:product_id/stock - Add stock to a product
 const addStock = Effect.gen(function* () {
-  // Extract product_id from path parameters
-  const request = yield* HttpServerRequest.HttpServerRequest
-  const urlParts = request.url.split("/")
-  // URL format: /inventory/products/{product_id}/stock
-  const productsIndex = urlParts.indexOf("products")
-  const productIdStr = urlParts[productsIndex + 1]
-
-  // Validate product_id is a valid UUID
-  if (!productIdStr || !UUID_PATTERN.test(productIdStr)) {
-    return yield* HttpServerResponse.json(
-      {
-        error: "validation_error",
-        message: "Invalid product_id format. Must be a valid UUID."
-      },
-      { status: 400 }
-    )
-  }
-
-  const productId = productIdStr as ProductId
+  // Extract and validate product_id from path parameters using schema
+  const { product_id: productId } = yield* HttpRouter.schemaPathParams(ProductIdParams)
 
   // Extract Idempotency-Key header
+  const request = yield* HttpServerRequest.HttpServerRequest
   const idempotencyKey = request.headers["idempotency-key"]
   if (!idempotencyKey) {
     return yield* HttpServerResponse.json(
@@ -210,5 +258,6 @@ const addStock = Effect.gen(function* () {
 
 export const ProductRoutes = HttpRouter.empty.pipe(
   HttpRouter.post("/products", createProduct),
-  HttpRouter.post("/products/:product_id/stock", addStock)
+  HttpRouter.post("/products/:product_id/stock", addStock),
+  HttpRouter.get("/products/:product_id/availability", getAvailability)
 )
