@@ -9,8 +9,8 @@
 - [x] Create database migration for products, inventory_reservations, inventory_adjustments tables
 
 ### Endpoints
-- [ ] POST /inventory/products - Create product with optional initial stock
-- [ ] POST /inventory/products/{product_id}/stock - Add stock with idempotency
+- [x] POST /inventory/products - Create product with optional initial stock
+- [x] POST /inventory/products/{product_id}/stock - Add stock with idempotency
 - [ ] GET /inventory/products/{product_id}/availability - Query stock availability
 - [ ] POST /inventory/reserve - Reserve stock for order (SELECT FOR UPDATE)
 - [ ] POST /inventory/release - Release reservation (compensation)

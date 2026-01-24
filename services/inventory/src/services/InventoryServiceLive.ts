@@ -1,4 +1,4 @@
-import { Layer, Effect, Option } from "effect"
+import { Layer, Effect, Option, Match } from "effect"
 import { InventoryService } from "./InventoryService.js"
 import { StockAdjustmentRepository } from "../repositories/StockAdjustmentRepository.js"
 import { ProductRepository } from "../repositories/ProductRepository.js"
@@ -31,38 +31,37 @@ export const InventoryServiceLive = Layer.effect(
             createdBy: null // Could be populated from auth context in future
           })
 
-          // Handle the three possible outcomes using pattern matching
-          switch (result._tag) {
-            case "ProductNotFound":
-              return yield* Effect.fail(new ProductNotFoundError({
-                productId,
-                searchedBy: "id"
-              }))
-
-            case "AlreadyExists":
-              // Return as error - the API handler converts to 409 with original result
-              return yield* Effect.fail(new DuplicateAdjustmentError({
+          // Handle the three possible outcomes using exhaustive pattern matching
+          const response = Match.value(result).pipe(
+            Match.tag("ProductNotFound", () =>
+              Effect.fail(new ProductNotFoundError({ productId, searchedBy: "id" }))
+            ),
+            Match.tag("AlreadyExists", ({ adjustment }) =>
+              Effect.fail(new DuplicateAdjustmentError({
                 idempotencyKey,
                 existingAdjustment: {
-                  adjustmentId: result.adjustment.id,
-                  previousQuantity: result.adjustment.previousQuantity,
-                  addedQuantity: result.adjustment.quantityChange,
-                  newQuantity: result.adjustment.newQuantity
+                  adjustmentId: adjustment.id,
+                  previousQuantity: adjustment.previousQuantity,
+                  addedQuantity: adjustment.quantityChange,
+                  newQuantity: adjustment.newQuantity
                 }
               }))
+            ),
+            Match.tag("Created", ({ adjustment, sku }) =>
+              Effect.succeed({
+                productId: adjustment.productId,
+                sku,
+                previousQuantity: adjustment.previousQuantity,
+                addedQuantity: adjustment.quantityChange,
+                newQuantity: adjustment.newQuantity,
+                adjustmentId: adjustment.id as AdjustmentId,
+                createdAt: adjustment.createdAt
+              } as AddStockResponse)
+            ),
+            Match.exhaustive
+          )
 
-            case "Created":
-              // Success - build and return response
-              return {
-                productId: result.adjustment.productId,
-                sku: result.sku,
-                previousQuantity: result.adjustment.previousQuantity,
-                addedQuantity: result.adjustment.quantityChange,
-                newQuantity: result.adjustment.newQuantity,
-                adjustmentId: result.adjustment.id as AdjustmentId,
-                createdAt: result.adjustment.createdAt
-              } as AddStockResponse
-          }
+          return yield* response
         }),
 
       getAvailability: (productId: ProductId) =>

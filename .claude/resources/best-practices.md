@@ -18,6 +18,79 @@ Guidelines and patterns discovered during implementation.
 - ADTs enable exhaustive pattern matching - the compiler ensures all cases are handled
 - Effect.js provides `Data.TaggedError` and `Schema.TaggedError` for error ADTs
 
+### Pattern Matching on ADTs with Match.tag
+
+When working with discriminated unions (ADTs), use `Match` from `effect` for idiomatic exhaustive pattern matching instead of switch statements on `_tag`.
+
+**Why Match.tag over switch:**
+- `Match.exhaustive` provides compile-time errors if you miss a case
+- `Match.tag()` automatically narrows the type, giving access to variant-specific fields
+- More declarative and reads like pattern matching in ML-family languages
+- Avoids manual type narrowing and casting
+
+**Defining an ADT result type:**
+```typescript
+// Repository returns a discriminated union
+type AtomicAddStockResult =
+  | { readonly _tag: "Created"; readonly adjustment: InventoryAdjustment; readonly sku: string }
+  | { readonly _tag: "AlreadyExists"; readonly adjustment: InventoryAdjustment }
+  | { readonly _tag: "ProductNotFound" }
+```
+
+**Pattern matching with Match.tag:**
+```typescript
+import { Match, Effect } from "effect"
+
+const response = Match.value(result).pipe(
+  Match.tag("ProductNotFound", () =>
+    Effect.fail(new ProductNotFoundError({ productId, searchedBy: "id" }))
+  ),
+  Match.tag("AlreadyExists", ({ adjustment }) =>
+    // `adjustment` is automatically typed - no casting needed
+    Effect.fail(new DuplicateAdjustmentError({
+      idempotencyKey,
+      existingAdjustment: {
+        adjustmentId: adjustment.id,
+        previousQuantity: adjustment.previousQuantity,
+        addedQuantity: adjustment.quantityChange,
+        newQuantity: adjustment.newQuantity
+      }
+    }))
+  ),
+  Match.tag("Created", ({ adjustment, sku }) =>
+    // Both `adjustment` and `sku` are available and typed
+    Effect.succeed({
+      productId: adjustment.productId,
+      sku,
+      previousQuantity: adjustment.previousQuantity,
+      addedQuantity: adjustment.quantityChange,
+      newQuantity: adjustment.newQuantity,
+      adjustmentId: adjustment.id,
+      createdAt: adjustment.createdAt
+    })
+  ),
+  Match.exhaustive  // Compile error if any _tag case is missing
+)
+
+return yield* response
+```
+
+**Anti-pattern - switch on _tag:**
+```typescript
+// DON'T: Manual switch loses type safety benefits
+switch (result._tag) {
+  case "ProductNotFound":
+    // result.adjustment would be a type error, but easy to miss
+    return yield* Effect.fail(new ProductNotFoundError({...}))
+  case "AlreadyExists":
+    // Need to cast or assert: (result as { adjustment: ... }).adjustment
+    return yield* Effect.fail(new DuplicateAdjustmentError({...}))
+  case "Created":
+    return { ... }
+  // No compile error if you forget a case!
+}
+```
+
 ---
 
 ## Error Handling with ADTs
