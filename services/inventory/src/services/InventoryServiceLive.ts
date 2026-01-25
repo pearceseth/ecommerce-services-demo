@@ -2,7 +2,8 @@ import { Layer, Effect, Option, Match } from "effect"
 import { InventoryService } from "./InventoryService.js"
 import { StockAdjustmentRepository } from "../repositories/StockAdjustmentRepository.js"
 import { ProductRepository } from "../repositories/ProductRepository.js"
-import { ProductNotFoundError, DuplicateAdjustmentError } from "../domain/errors.js"
+import { ReservationRepository } from "../repositories/ReservationRepository.js"
+import { ProductNotFoundError, DuplicateAdjustmentError, InsufficientStockError } from "../domain/errors.js"
 import type { ProductId } from "../domain/Product.js"
 import type { AddStockRequest, AddStockResponse, AdjustmentId } from "../domain/Adjustment.js"
 
@@ -11,6 +12,7 @@ export const InventoryServiceLive = Layer.effect(
   Effect.gen(function* () {
     const stockAdjustmentRepo = yield* StockAdjustmentRepository
     const productRepo = yield* ProductRepository
+    const reservationRepo = yield* ReservationRepository
 
     return {
       addStock: (productId: ProductId, idempotencyKey: string, request: AddStockRequest) =>
@@ -73,13 +75,39 @@ export const InventoryServiceLive = Layer.effect(
           })
         }),
 
-      reserveStock: (_request) =>
-        // Not implemented yet - placeholder for future saga orchestrator integration
-        Effect.succeed([]),
+      reserveStock: (request) =>
+        Effect.gen(function* () {
+          const result = yield* reservationRepo.reserveStockAtomic(
+            request.orderId,
+            request.items
+          )
 
-      releaseStock: (_orderId) =>
-        // Not implemented yet - placeholder for future saga orchestrator integration
-        Effect.void
+          // Handle the discriminated union result using exhaustive pattern matching
+          return yield* Match.value(result).pipe(
+            Match.tag("ProductNotFound", ({ productId }) =>
+              Effect.fail(new ProductNotFoundError({ productId, searchedBy: "id" }))
+            ),
+            Match.tag("InsufficientStock", ({ productId, productSku, requested, available }) =>
+              Effect.fail(new InsufficientStockError({
+                productId,
+                productSku,
+                requested,
+                available
+              }))
+            ),
+            Match.tag("AlreadyReserved", ({ reservations }) =>
+              // Idempotent retry - return existing reservation IDs
+              Effect.succeed(reservations.map(r => r.id))
+            ),
+            Match.tag("Reserved", ({ reservations }) =>
+              Effect.succeed(reservations.map(r => r.id))
+            ),
+            Match.exhaustive
+          )
+        }),
+
+      releaseStock: (orderId) =>
+        reservationRepo.releaseByOrderId(orderId)
     }
   })
 )

@@ -2,13 +2,15 @@ import { Layer } from "effect"
 import { DatabaseLive } from "./db.js"
 import { ProductRepositoryLive } from "./repositories/ProductRepositoryLive.js"
 import { StockAdjustmentRepositoryLive } from "./repositories/StockAdjustmentRepositoryLive.js"
+import { ReservationRepositoryLive } from "./repositories/ReservationRepositoryLive.js"
 import { ProductServiceLive } from "./services/ProductServiceLive.js"
 import { InventoryServiceLive } from "./services/InventoryServiceLive.js"
 
 // Repository layer depends on database
 const RepositoryLive = Layer.mergeAll(
   ProductRepositoryLive,
-  StockAdjustmentRepositoryLive
+  StockAdjustmentRepositoryLive,
+  ReservationRepositoryLive
 ).pipe(Layer.provide(DatabaseLive))
 
 // Service layer depends on repositories

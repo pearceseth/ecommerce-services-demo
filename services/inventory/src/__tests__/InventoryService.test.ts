@@ -4,6 +4,7 @@ import { InventoryService } from "../services/InventoryService.js"
 import { InventoryServiceLive } from "../services/InventoryServiceLive.js"
 import { StockAdjustmentRepository, AtomicAddStockResult } from "../repositories/StockAdjustmentRepository.js"
 import { ProductRepository } from "../repositories/ProductRepository.js"
+import { ReservationRepository, AtomicReserveResult } from "../repositories/ReservationRepository.js"
 import { Product, ProductId } from "../domain/Product.js"
 import { InventoryAdjustment, AdjustmentId, AddStockRequest, AdjustmentReason } from "../domain/Adjustment.js"
 import { ProductNotFoundError, DuplicateAdjustmentError } from "../domain/errors.js"
@@ -73,6 +74,20 @@ const createMockProductRepo = (overrides: {
   })
 }
 
+// Mock ReservationRepository factory
+const createMockReservationRepo = (overrides: {
+  reserveStockAtomic?: (orderId: string, items: readonly any[]) => Effect.Effect<AtomicReserveResult>
+  findByOrderId?: (orderId: string) => Effect.Effect<readonly any[]>
+  releaseByOrderId?: (orderId: string) => Effect.Effect<void>
+} = {}) => {
+  return Layer.succeed(ReservationRepository, {
+    reserveStockAtomic: overrides.reserveStockAtomic ?? (() =>
+      Effect.succeed({ _tag: "Reserved", reservations: [] } as const)),
+    findByOrderId: overrides.findByOrderId ?? (() => Effect.succeed([])),
+    releaseByOrderId: overrides.releaseByOrderId ?? (() => Effect.void)
+  })
+}
+
 describe("InventoryService", () => {
   describe("addStock", () => {
     it("should add stock successfully with new idempotency key", async () => {
@@ -85,9 +100,10 @@ describe("InventoryService", () => {
           } as const)
       })
       const mockProductRepo = createMockProductRepo()
+      const mockReservationRepo = createMockReservationRepo()
 
       const testLayer = InventoryServiceLive.pipe(
-        Layer.provide(Layer.merge(mockStockAdjustmentRepo, mockProductRepo))
+        Layer.provide(Layer.mergeAll(mockStockAdjustmentRepo, mockProductRepo, mockReservationRepo))
       )
 
       const result = await Effect.gen(function* () {
@@ -112,9 +128,10 @@ describe("InventoryService", () => {
           } as const)
       })
       const mockProductRepo = createMockProductRepo()
+      const mockReservationRepo = createMockReservationRepo()
 
       const testLayer = InventoryServiceLive.pipe(
-        Layer.provide(Layer.merge(mockStockAdjustmentRepo, mockProductRepo))
+        Layer.provide(Layer.mergeAll(mockStockAdjustmentRepo, mockProductRepo, mockReservationRepo))
       )
 
       const exit = await Effect.gen(function* () {
@@ -146,9 +163,10 @@ describe("InventoryService", () => {
           } as const)
       })
       const mockProductRepo = createMockProductRepo()
+      const mockReservationRepo = createMockReservationRepo()
 
       const testLayer = InventoryServiceLive.pipe(
-        Layer.provide(Layer.merge(mockStockAdjustmentRepo, mockProductRepo))
+        Layer.provide(Layer.mergeAll(mockStockAdjustmentRepo, mockProductRepo, mockReservationRepo))
       )
 
       const nonExistentProductId = "00000000-0000-0000-0000-000000000000" as ProductId
@@ -185,9 +203,10 @@ describe("InventoryService", () => {
         }
       })
       const mockProductRepo = createMockProductRepo()
+      const mockReservationRepo = createMockReservationRepo()
 
       const testLayer = InventoryServiceLive.pipe(
-        Layer.provide(Layer.merge(mockStockAdjustmentRepo, mockProductRepo))
+        Layer.provide(Layer.mergeAll(mockStockAdjustmentRepo, mockProductRepo, mockReservationRepo))
       )
 
       await Effect.gen(function* () {
@@ -234,9 +253,10 @@ describe("InventoryService", () => {
         }
       })
       const mockProductRepo = createMockProductRepo()
+      const mockReservationRepo = createMockReservationRepo()
 
       const testLayer = InventoryServiceLive.pipe(
-        Layer.provide(Layer.merge(mockStockAdjustmentRepo, mockProductRepo))
+        Layer.provide(Layer.mergeAll(mockStockAdjustmentRepo, mockProductRepo, mockReservationRepo))
       )
 
       const result = await Effect.gen(function* () {
@@ -256,9 +276,10 @@ describe("InventoryService", () => {
       const mockProductRepo = createMockProductRepo({
         findById: () => Effect.succeed(Option.some(testProduct))
       })
+      const mockReservationRepo = createMockReservationRepo()
 
       const testLayer = InventoryServiceLive.pipe(
-        Layer.provide(Layer.merge(mockStockAdjustmentRepo, mockProductRepo))
+        Layer.provide(Layer.mergeAll(mockStockAdjustmentRepo, mockProductRepo, mockReservationRepo))
       )
 
       const result = await Effect.gen(function* () {
@@ -274,9 +295,10 @@ describe("InventoryService", () => {
       const mockProductRepo = createMockProductRepo({
         findById: () => Effect.succeed(Option.none())
       })
+      const mockReservationRepo = createMockReservationRepo()
 
       const testLayer = InventoryServiceLive.pipe(
-        Layer.provide(Layer.merge(mockStockAdjustmentRepo, mockProductRepo))
+        Layer.provide(Layer.mergeAll(mockStockAdjustmentRepo, mockProductRepo, mockReservationRepo))
       )
 
       const exit = await Effect.gen(function* () {
