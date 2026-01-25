@@ -85,12 +85,15 @@ const runReserveStock = async (
       }))
     })
 
+    const totalQuantity = body.items.reduce((sum, item) => sum + item.quantity, 0)
+
     return {
       status: 201,
       body: {
         order_id: body.orderId,
         reservation_ids: reservationIds as string[],
-        items_reserved: body.items.length
+        line_items_reserved: body.items.length,
+        total_quantity_reserved: totalQuantity
       }
     } as ReserveStockResponse
   }).pipe(
@@ -158,7 +161,8 @@ describe("POST /inventory/reservations", () => {
       expect(result.status).toBe(201)
       expect(result.body.order_id).toBe(testOrderId)
       expect(result.body.reservation_ids).toEqual([testReservationId1])
-      expect(result.body.items_reserved).toBe(1)
+      expect(result.body.line_items_reserved).toBe(1)
+      expect(result.body.total_quantity_reserved).toBe(2)
     })
 
     it("should return 201 with multiple reservation IDs for multiple items", async () => {
@@ -180,7 +184,8 @@ describe("POST /inventory/reservations", () => {
       expect(result.status).toBe(201)
       expect(result.body.order_id).toBe(testOrderId)
       expect(result.body.reservation_ids).toEqual([testReservationId1, testReservationId2])
-      expect(result.body.items_reserved).toBe(2)
+      expect(result.body.line_items_reserved).toBe(2)
+      expect(result.body.total_quantity_reserved).toBe(3)
     })
 
     it("should return same response on idempotent retry", async () => {
@@ -377,10 +382,12 @@ describe("POST /inventory/reservations", () => {
 
       expect(result.body).toHaveProperty("order_id")
       expect(result.body).toHaveProperty("reservation_ids")
-      expect(result.body).toHaveProperty("items_reserved")
+      expect(result.body).toHaveProperty("line_items_reserved")
+      expect(result.body).toHaveProperty("total_quantity_reserved")
       expect(result.body).not.toHaveProperty("orderId")
       expect(result.body).not.toHaveProperty("reservationIds")
-      expect(result.body).not.toHaveProperty("itemsReserved")
+      expect(result.body).not.toHaveProperty("lineItemsReserved")
+      expect(result.body).not.toHaveProperty("totalQuantityReserved")
     })
 
     it("should include all expected fields in successful response", async () => {
@@ -399,7 +406,8 @@ describe("POST /inventory/reservations", () => {
       expect(result.status).toBe(201)
       expect(result.body.order_id).toBeDefined()
       expect(result.body.reservation_ids).toBeDefined()
-      expect(result.body.items_reserved).toBeDefined()
+      expect(result.body.line_items_reserved).toBeDefined()
+      expect(result.body.total_quantity_reserved).toBeDefined()
     })
 
     it("should include all context in insufficient stock error response", async () => {
