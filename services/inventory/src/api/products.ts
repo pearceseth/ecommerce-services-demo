@@ -4,7 +4,7 @@ import { SqlError } from "@effect/sql"
 import { Effect, DateTime, ParseResult } from "effect"
 import { CreateProductRequest, ProductIdParams } from "../domain/Product.js"
 import { AddStockRequest } from "../domain/Adjustment.js"
-import { ReserveStockHttpRequest } from "../domain/Reservation.js"
+import { ReserveStockHttpRequest, OrderIdParams } from "../domain/Reservation.js"
 import { ProductService } from "../services/ProductService.js"
 import { InventoryService } from "../services/InventoryService.js"
 import type { DuplicateSkuError, ProductNotFoundError, DuplicateAdjustmentError, InsufficientStockError } from "../domain/errors.js"
@@ -355,9 +355,74 @@ const reserveStock = Effect.gen(function* () {
   })
 )
 
+// DELETE /reservations/:order_id - Release reservations for an order
+const releaseReservation = Effect.gen(function* () {
+  // Extract and validate order_id from path parameters
+  const { order_id: orderId } = yield* HttpRouter.schemaPathParams(OrderIdParams)
+
+  // Get service and execute release
+  const inventoryService = yield* InventoryService
+  const result = yield* inventoryService.releaseStock(orderId)
+
+  // Log the operation
+  if (result.releasedCount > 0) {
+    yield* Effect.logInfo("Reservations released", {
+      orderId,
+      releasedCount: result.releasedCount,
+      totalQuantityRestored: result.totalQuantityRestored
+    })
+  } else if (result.wasAlreadyReleased) {
+    yield* Effect.logInfo("Reservations already released (idempotent)", { orderId })
+  } else {
+    yield* Effect.logInfo("No reservations found to release", { orderId })
+  }
+
+  // Return response (snake_case for JSON)
+  const response = {
+    order_id: orderId,
+    released_count: result.releasedCount,
+    total_quantity_restored: result.totalQuantityRestored,
+    message: result.releasedCount > 0
+      ? `Released ${result.releasedCount} reservation(s), restored ${result.totalQuantityRestored} units to stock`
+      : result.wasAlreadyReleased
+        ? "Reservations were already released"
+        : "No reservations found for this order"
+  }
+
+  return HttpServerResponse.json(response, { status: 200 })
+}).pipe(
+  Effect.withSpan("DELETE /inventory/reservations/:order_id"),
+  Effect.flatten,
+  Effect.catchTags({
+    // Path parameter validation errors (400 Bad Request)
+    ParseError: (_error: ParseResult.ParseError) =>
+      HttpServerResponse.json(
+        {
+          error: "validation_error",
+          message: "Invalid order_id format. Must be a valid UUID."
+        },
+        { status: 400 }
+      ),
+
+    // SQL errors (500 Internal Server Error)
+    SqlError: (error: SqlError.SqlError) =>
+      Effect.gen(function* () {
+        yield* Effect.logError("Database error in releaseReservation", { error })
+        return HttpServerResponse.json(
+          {
+            error: "internal_error",
+            message: "An unexpected error occurred"
+          },
+          { status: 500 }
+        )
+      }).pipe(Effect.flatten)
+  })
+)
+
 export const ProductRoutes = HttpRouter.empty.pipe(
   HttpRouter.post("/products", createProduct),
   HttpRouter.post("/products/:product_id/stock", addStock),
   HttpRouter.get("/products/:product_id/availability", getAvailability),
-  HttpRouter.post("/reservations", reserveStock)
+  HttpRouter.post("/reservations", reserveStock),
+  HttpRouter.del("/reservations/:order_id", releaseReservation)
 )

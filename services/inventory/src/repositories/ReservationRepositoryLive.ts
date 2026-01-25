@@ -140,10 +140,10 @@ export const ReservationRepositoryLive = Layer.effect(
         }),
 
       releaseByOrderId: (orderId: string) =>
-        // Also requires transaction to ensure stock restoration and status update are atomic
+        // Transaction ensures stock restoration and status update are atomic
         sql.withTransaction(
           Effect.gen(function* () {
-            // Get reservations to release
+            // Step 1: Get reservations to release (lock for update)
             const reservations = yield* sql<ReservationRow>`
               SELECT id, order_id, product_id, quantity, status, created_at, released_at
               FROM inventory_reservations
@@ -152,7 +152,31 @@ export const ReservationRepositoryLive = Layer.effect(
               FOR UPDATE
             `
 
-            // Restore stock for each reservation
+            // Early return if no reservations to release
+            if (reservations.length === 0) {
+              // Check if reservations exist but are already released
+              const existingReleased = yield* sql<{ count: number }>`
+                SELECT COUNT(*)::int AS count
+                FROM inventory_reservations
+                WHERE order_id = ${orderId}::uuid
+                  AND status = 'RELEASED'
+              `
+              const wasAlreadyReleased = existingReleased[0]?.count > 0
+
+              return {
+                releasedCount: 0,
+                totalQuantityRestored: 0,
+                wasAlreadyReleased
+              }
+            }
+
+            // Step 2: Calculate total quantity to restore
+            const totalQuantityRestored = reservations.reduce(
+              (sum, res) => sum + res.quantity,
+              0
+            )
+
+            // Step 3: Restore stock for each reservation
             for (const res of reservations) {
               yield* sql`
                 UPDATE products
@@ -162,7 +186,7 @@ export const ReservationRepositoryLive = Layer.effect(
               `
             }
 
-            // Mark reservations as released
+            // Step 4: Mark reservations as released
             yield* sql`
               UPDATE inventory_reservations
               SET status = 'RELEASED',
@@ -170,6 +194,12 @@ export const ReservationRepositoryLive = Layer.effect(
               WHERE order_id = ${orderId}::uuid
                 AND status = 'RESERVED'
             `
+
+            return {
+              releasedCount: reservations.length,
+              totalQuantityRestored,
+              wasAlreadyReleased: false
+            }
           })
         )
     }

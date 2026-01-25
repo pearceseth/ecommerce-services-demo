@@ -59,7 +59,7 @@ const createMockInventoryService = (overrides: {
     addStock: () => Effect.succeed({} as any),
     getAvailability: () => Effect.succeed(100),
     reserveStock: overrides.reserveStock ?? (() => Effect.succeed([testReservationId1])),
-    releaseStock: () => Effect.void
+    releaseStock: () => Effect.succeed({ releasedCount: 0, totalQuantityRestored: 0, wasAlreadyReleased: false })
   })
 }
 

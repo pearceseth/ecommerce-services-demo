@@ -16,6 +16,13 @@ export type AtomicReserveResult =
   | { readonly _tag: "InsufficientStock"; readonly productId: string; readonly productSku: string; readonly requested: number; readonly available: number }
   | { readonly _tag: "ProductNotFound"; readonly productId: string }
 
+// Result type for release operation
+export interface ReleaseReservationResult {
+  readonly releasedCount: number
+  readonly totalQuantityRestored: number
+  readonly wasAlreadyReleased: boolean
+}
+
 export class ReservationRepository extends Context.Tag("ReservationRepository")<
   ReservationRepository,
   {
@@ -39,9 +46,10 @@ export class ReservationRepository extends Context.Tag("ReservationRepository")<
     /**
      * Release all reservations for an order (compensation action).
      * Updates status to RELEASED and restores stock quantities.
+     * Returns details about what was released for logging/debugging.
      */
     readonly releaseByOrderId: (
       orderId: string
-    ) => Effect.Effect<void, SqlError.SqlError>
+    ) => Effect.Effect<ReleaseReservationResult, SqlError.SqlError>
   }
 >() {}

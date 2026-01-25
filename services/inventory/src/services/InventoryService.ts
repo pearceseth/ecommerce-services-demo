@@ -7,6 +7,7 @@ import type {
   InsufficientStockError,
   ProductNotFoundError
 } from "../domain/errors.js"
+import type { ReleaseReservationResult } from "../repositories/ReservationRepository.js"
 
 export interface ReserveStockRequest {
   readonly orderId: string
@@ -35,6 +36,6 @@ export class InventoryService extends Context.Tag("InventoryService")<
 
     readonly releaseStock: (
       orderId: string
-    ) => Effect.Effect<void, SqlError.SqlError>
+    ) => Effect.Effect<ReleaseReservationResult, SqlError.SqlError>
   }
 >() {}

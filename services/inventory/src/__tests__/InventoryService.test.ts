@@ -78,13 +78,13 @@ const createMockProductRepo = (overrides: {
 const createMockReservationRepo = (overrides: {
   reserveStockAtomic?: (orderId: string, items: readonly any[]) => Effect.Effect<AtomicReserveResult>
   findByOrderId?: (orderId: string) => Effect.Effect<readonly any[]>
-  releaseByOrderId?: (orderId: string) => Effect.Effect<void>
+  releaseByOrderId?: (orderId: string) => Effect.Effect<{ releasedCount: number; totalQuantityRestored: number; wasAlreadyReleased: boolean }>
 } = {}) => {
   return Layer.succeed(ReservationRepository, {
     reserveStockAtomic: overrides.reserveStockAtomic ?? (() =>
       Effect.succeed({ _tag: "Reserved", reservations: [] } as const)),
     findByOrderId: overrides.findByOrderId ?? (() => Effect.succeed([])),
-    releaseByOrderId: overrides.releaseByOrderId ?? (() => Effect.void)
+    releaseByOrderId: overrides.releaseByOrderId ?? (() => Effect.succeed({ releasedCount: 0, totalQuantityRestored: 0, wasAlreadyReleased: false }))
   })
 }
 

@@ -31,3 +31,8 @@ export class ReserveStockHttpRequest extends Schema.Class<ReserveStockHttpReques
   orderId: Schema.UUID,
   items: Schema.Array(ReserveItemRequest).pipe(Schema.minItems(1))
 }) {}
+
+// Path parameter schema for DELETE /reservations/:order_id
+export class OrderIdParams extends Schema.Class<OrderIdParams>("OrderIdParams")({
+  order_id: Schema.UUID
+}) {}
