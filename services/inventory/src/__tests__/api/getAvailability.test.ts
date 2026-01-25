@@ -142,7 +142,7 @@ const runGetAvailability = async (
   )
 }
 
-describe("GET /inventory/products/:product_id/availability", () => {
+describe("GET /products/:product_id/availability", () => {
   describe("successful requests", () => {
     it("should return 200 with availability for product with stock", async () => {
       const mockProductService = createMockProductService({

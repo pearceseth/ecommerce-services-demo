@@ -143,7 +143,7 @@ const runReserveStock = async (
   )
 }
 
-describe("POST /inventory/reservations", () => {
+describe("POST /reservations", () => {
   describe("successful requests", () => {
     it("should return 201 with reservation IDs for valid request", async () => {
       const mockInventoryService = createMockInventoryService({

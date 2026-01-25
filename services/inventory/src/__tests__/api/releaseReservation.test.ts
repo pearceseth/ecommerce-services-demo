@@ -98,7 +98,7 @@ const runReleaseReservation = async (
   )
 }
 
-describe("DELETE /inventory/reservations/:order_id", () => {
+describe("DELETE /eservations/:order_id", () => {
   describe("successful requests", () => {
     it("should return 200 when reservations are released", async () => {
       const mockInventoryService = createMockInventoryService({

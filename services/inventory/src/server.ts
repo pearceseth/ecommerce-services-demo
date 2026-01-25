@@ -4,6 +4,7 @@ import { Effect, Layer } from "effect"
 import { createServer } from "node:http"
 import { HealthRoutes } from "./api/health.js"
 import { ProductRoutes } from "./api/products.js"
+import { ReservationRoutes } from "./api/reservations.js"
 import { AppLive } from "./layers.js"
 import { TelemetryLive } from "./telemetry.js"
 
@@ -17,7 +18,8 @@ const rootRoute = HttpRouter.empty.pipe(
 const router = HttpRouter.empty.pipe(
   HttpRouter.mount("/", rootRoute),
   HttpRouter.mount("/", HealthRoutes),
-  HttpRouter.mount("/inventory", ProductRoutes)
+  HttpRouter.mount("/", ProductRoutes),
+  HttpRouter.mount("/", ReservationRoutes)
 )
 
 const HttpLive = router.pipe(
