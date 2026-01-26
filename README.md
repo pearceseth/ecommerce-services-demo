@@ -19,6 +19,8 @@ The system will have a few components:
 4. A Saga Orchestrator
     For ensuring that processing an order submission works in a safe way without losing events.
 
+For more details see [engineering-design](engineering-design.md).
+
 ## Getting Started
 
 ### Prerequisites

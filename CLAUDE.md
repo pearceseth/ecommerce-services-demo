@@ -31,6 +31,8 @@ This is a **TypeScript monorepo** using npm workspaces:
 ```
 services/          # Microservices (each runs in separate Docker container)
   edge-api/        # Entry point API - receives order requests
+  inventory/       # Inventory API - manages product inventory with concurrency guards
+  payment/        # Payment API - mocks payment authorization and payment capture with randomized failures
 packages/          # Shared libraries (future)
 ```
 
@@ -48,6 +50,8 @@ packages/          # Shared libraries (future)
 ## Architecture Overview
 
 See `engineering-design.md` for comprehensive design documentation including Mermaid diagrams.
+
+See .claude/resources/best-practices.md for coding best practices for this project.ß
 
 **Pattern**: Saga Orchestration with Ledger-First Design + Transactional Outbox
 
