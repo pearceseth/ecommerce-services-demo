@@ -8,7 +8,7 @@ description: "Create a detailed implementation plan in the form of a feature sto
 
 ## Goal
 
-Given a feature request, generate a detailed implementation plan. Do not write code. That is the resposibility of the implementer. You can generate steps in plain language or psudo-code where appropriate. The goal is to create a plan that is detailed enough to enable ai agents to implement the plan without difficulty. 
+Given a feature request, generate a detailed implementation plan. Do not write code. That is the resposibility of the implementer. You can generate steps in plain language or pseudo-code where appropriate. The goal is to create a plan that is detailed enough to enable ai agents to implement the plan without difficulty. 
 
 If no specific feature is given as an argument, look for the next uncompleted task in todo.md in the root of the project. 
 
