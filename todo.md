@@ -36,13 +36,13 @@ _Stateless mock service - implement first for testing other services_
 _Manages order records and lifecycle states_
 
 ### Setup
-- [ ] Create orders service scaffold (hello world HTTP server with Effect.js)
-- [ ] Add database connection and health check endpoint
-- [ ] Restructure to recommended folder pattern (api/, domain/, services/, repositories/)
-- [ ] Create database migration for orders, order_items tables
+- [x] Create orders service scaffold (hello world HTTP server with Effect.js)
+- [x] Add database connection and health check endpoint
+- [x] Restructure to recommended folder pattern (api/, domain/, services/, repositories/)
+- [x] Create database migration for orders, order_items tables
 
 ### Endpoints
-- [ ] POST /orders - Create order from ledger entry (idempotent via order_ledger_id)
+- [x] POST /orders - Create order from ledger entry (idempotent via order_ledger_id)
 - [ ] GET /orders/{order_id} - Get order details with items
 - [ ] PUT /orders/{order_id}/cancel - Cancel order (compensation, idempotent)
 - [ ] PUT /orders/{order_id}/confirm - Confirm order (final step, idempotent)
