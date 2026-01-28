@@ -186,7 +186,7 @@ const runCancelOrder = async (
   )
 }
 
-describe("PUT /orders/:order_id/cancel", () => {
+describe("POST /orders/:order_id/cancellation", () => {
   describe("successful cancellation", () => {
     it("should return 200 with cancelled order", async () => {
       const mockService = createMockOrderService()

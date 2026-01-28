@@ -83,7 +83,7 @@ const getOrderById = Effect.gen(function* () {
   })
 )
 
-// PUT /orders/:order_id/cancel - Cancel order (compensation)
+// POST /orders/:order_id/cancellation - Cancel order (compensation)
 const cancelOrder = Effect.gen(function* () {
   const service = yield* OrderService
   const { order_id: orderId } = yield* HttpRouter.schemaPathParams(OrderIdParams)
@@ -121,7 +121,7 @@ const cancelOrder = Effect.gen(function* () {
   })
 )
 
-// PUT /orders/:order_id/confirm - Confirm order (final saga step)
+// POST /orders/:order_id/confirmation - Confirm order (final saga step)
 const confirmOrder = Effect.gen(function* () {
   const service = yield* OrderService
   const { order_id: orderId } = yield* HttpRouter.schemaPathParams(OrderIdParams)
@@ -162,6 +162,6 @@ const confirmOrder = Effect.gen(function* () {
 export const OrderRoutes = HttpRouter.empty.pipe(
   HttpRouter.post("/orders", createOrder),
   HttpRouter.get("/orders/:order_id", getOrderById),
-  HttpRouter.put("/orders/:order_id/cancel", cancelOrder),
-  HttpRouter.put("/orders/:order_id/confirm", confirmOrder)
+  HttpRouter.post("/orders/:order_id/cancellation", cancelOrder),
+  HttpRouter.post("/orders/:order_id/confirmation", confirmOrder)
 )

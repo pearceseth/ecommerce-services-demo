@@ -186,7 +186,7 @@ const runConfirmOrder = async (
   )
 }
 
-describe("PUT /orders/:order_id/confirm", () => {
+describe("POST /orders/:order_id/confirmation", () => {
   describe("successful confirmation", () => {
     it("should return 200 with confirmed order", async () => {
       const mockService = createMockOrderService()

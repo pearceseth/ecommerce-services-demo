@@ -8,8 +8,8 @@
 
 Implement two idempotent status-transition endpoints for the Orders Service:
 
-1. **PUT /orders/{order_id}/cancel** - Cancel an order (compensation action called by the Orchestrator during saga rollback)
-2. **PUT /orders/{order_id}/confirm** - Confirm an order (final saga step after payment capture)
+1. **PUT /orders/{order_id}/cancel** - Cancel an order (compensation action called by the Orchestrator during saga rollback) **EDIT** Changing this to POST /orders/:order_id/cancellation for better restful naming
+2. **PUT /orders/{order_id}/confirm** - Confirm an order (final saga step after payment capture) **EDIT** Changing this to POST /orders/:order_id/confirmation for better restful naming.
 
 Both endpoints are called by the Orchestrator Service as part of the saga lifecycle defined in `engineering-design.md` Section 4. They must be idempotent to support safe retries.
 
