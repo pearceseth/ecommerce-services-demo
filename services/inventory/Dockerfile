@@ -11,18 +11,24 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build
 
-FROM base AS runner
+# Shared runner base
+FROM base AS runner-base
 WORKDIR /app
-ENV NODE_ENV=production
-
-RUN addgroup --system --gid 1001 appgroup && \
-    adduser --system --uid 1001 --ingroup appgroup appuser
-
-COPY --from=deps --chown=appuser:appgroup /app/node_modules ./node_modules
-COPY --from=builder --chown=appuser:appgroup /app/dist ./dist
-COPY --chown=appuser:appgroup package.json ./
-
-USER appuser
-
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=builder /app/dist ./dist
+COPY package.json ./
 EXPOSE 3001
+
+# Development: runs as root
+FROM runner-base AS runner-dev
+ENV NODE_ENV=development
+CMD ["node", "dist/index.js"]
+
+# Production: runs as non-root user
+FROM runner-base AS runner-prod
+ENV NODE_ENV=production
+RUN addgroup --system --gid 1001 appgroup && \
+    adduser --system --uid 1001 --ingroup appgroup appuser && \
+    chown -R appuser:appgroup /app
+USER appuser
 CMD ["node", "dist/index.js"]

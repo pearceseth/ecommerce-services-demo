@@ -30,6 +30,7 @@ services:
     build:
       context: ./services/edge-api
       dockerfile: Dockerfile
+      target: runner-dev
     ports:
       - "3000:3000"
     environment:
@@ -47,6 +48,7 @@ services:
     build:
       context: ./services/inventory
       dockerfile: Dockerfile
+      target: runner-dev
     ports:
       - "3001:3001"
     environment:
@@ -68,6 +70,7 @@ services:
     build:
       context: ./services/payment
       dockerfile: Dockerfile
+      target: runner-dev
     ports:
       - "3002:3002"
     environment:
@@ -77,6 +80,28 @@ services:
     depends_on:
       observability:
         condition: service_started
-        
+
+  order:
+    build:
+      context: ./services/orders
+      dockerfile: Dockerfile
+      target: runner-dev
+    ports:
+      - "3003:3003"
+    environment:
+      PORT: 3003
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_NAME: ecommerce
+      DATABASE_USER: ecommerce
+      DATABASE_PASSWORD: ecommerce # Real system should not store sensitive info in source like this
+      OTEL_SERVICE_NAME: order-service
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://observability:4318
+    depends_on:
+      postgres:
+        condition: service_healthy
+      observability:
+        condition: service_started
+
 volumes:
   postgres_data:

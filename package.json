@@ -9,6 +9,7 @@
     "build": "npm run build --workspaces --if-present",
     "dev:edge-api": "npm run dev --workspace=@ecommerce/edge-api",
     "dev:inventory": "npm run dev --workspace=@ecommerce/inventory",
+    "dev:orders": "npm run dev --workspace=@ecommerce/orders",
     "db:migrate": "./scripts/migrate.sh",
     "lint": "eslint . --ext .ts",
     "typecheck": "tsc --build"

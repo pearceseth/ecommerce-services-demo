@@ -17,7 +17,7 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 COPY package.json ./
-EXPOSE 3002
+EXPOSE 3003
 
 # Development: runs as root
 FROM runner-base AS runner-dev
