@@ -14,7 +14,7 @@ import {
   CreateOrderRequest,
   CreateOrderItemRequest
 } from "../domain/Order.js"
-import { OrderNotFoundError } from "../domain/errors.js"
+import { OrderNotFoundError, InvalidOrderStatusError } from "../domain/errors.js"
 
 // Test fixtures
 const testOrderLedgerId = "550e8400-e29b-41d4-a716-446655440000" as OrderLedgerId
@@ -41,6 +41,28 @@ const testOrderItem = new OrderItem({
   quantity: 2,
   unitPriceCents: 2999,
   createdAt: DateTime.unsafeNow()
+})
+
+const cancelledOrder = new Order({
+  id: testOrderId,
+  orderLedgerId: testOrderLedgerId,
+  userId: testUserId,
+  status: "CANCELLED",
+  totalAmountCents: 5998,
+  currency: "USD",
+  createdAt: DateTime.unsafeNow(),
+  updatedAt: DateTime.unsafeNow()
+})
+
+const confirmedOrder = new Order({
+  id: testOrderId,
+  orderLedgerId: testOrderLedgerId,
+  userId: testUserId,
+  status: "CONFIRMED",
+  totalAmountCents: 5998,
+  currency: "USD",
+  createdAt: DateTime.unsafeNow(),
+  updatedAt: DateTime.unsafeNow()
 })
 
 const testCreateRequest = new CreateOrderRequest({
@@ -213,6 +235,224 @@ describe("OrderService", () => {
       }).pipe(Effect.provide(testLayer), Effect.runPromise)
 
       expect(itemsOrderId).toBe(testOrderId)
+    })
+  })
+
+  describe("cancel", () => {
+    it("should cancel a CREATED order", async () => {
+      const mockRepo = createMockRepo({
+        findById: () => Effect.succeed(Option.some(testOrder)),
+        updateStatus: () => Effect.succeed(Option.some(cancelledOrder)),
+        getItems: () => Effect.succeed([testOrderItem])
+      })
+
+      const testLayer = OrderServiceLive.pipe(Layer.provide(mockRepo))
+
+      const result = await Effect.gen(function* () {
+        const service = yield* OrderService
+        return yield* service.cancel(testOrderId)
+      }).pipe(Effect.provide(testLayer), Effect.runPromise)
+
+      expect(result.order.status).toBe("CANCELLED")
+      expect(result.items.length).toBe(1)
+    })
+
+    it("should return existing order when already CANCELLED (idempotent)", async () => {
+      const mockRepo = createMockRepo({
+        findById: () => Effect.succeed(Option.some(cancelledOrder)),
+        getItems: () => Effect.succeed([testOrderItem]),
+        updateStatus: () => { throw new Error("updateStatus should not be called") }
+      })
+
+      const testLayer = OrderServiceLive.pipe(Layer.provide(mockRepo))
+
+      const result = await Effect.gen(function* () {
+        const service = yield* OrderService
+        return yield* service.cancel(testOrderId)
+      }).pipe(Effect.provide(testLayer), Effect.runPromise)
+
+      expect(result.order.status).toBe("CANCELLED")
+      expect(result.items.length).toBe(1)
+    })
+
+    it("should fail with InvalidOrderStatusError when order is CONFIRMED", async () => {
+      const mockRepo = createMockRepo({
+        findById: () => Effect.succeed(Option.some(confirmedOrder))
+      })
+
+      const testLayer = OrderServiceLive.pipe(Layer.provide(mockRepo))
+
+      const exit = await Effect.gen(function* () {
+        const service = yield* OrderService
+        return yield* service.cancel(testOrderId)
+      }).pipe(Effect.provide(testLayer), Effect.runPromiseExit)
+
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) {
+        const error = exit.cause
+        expect(error._tag).toBe("Fail")
+        if (error._tag === "Fail") {
+          expect(error.error._tag).toBe("InvalidOrderStatusError")
+          expect((error.error as InvalidOrderStatusError).currentStatus).toBe("CONFIRMED")
+          expect((error.error as InvalidOrderStatusError).attemptedStatus).toBe("CANCELLED")
+        }
+      }
+    })
+
+    it("should fail with OrderNotFoundError when order does not exist", async () => {
+      const mockRepo = createMockRepo({
+        findById: () => Effect.succeed(Option.none())
+      })
+
+      const testLayer = OrderServiceLive.pipe(Layer.provide(mockRepo))
+
+      const exit = await Effect.gen(function* () {
+        const service = yield* OrderService
+        return yield* service.cancel("nonexistent-id" as OrderId)
+      }).pipe(Effect.provide(testLayer), Effect.runPromiseExit)
+
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) {
+        const error = exit.cause
+        expect(error._tag).toBe("Fail")
+        if (error._tag === "Fail") {
+          expect(error.error._tag).toBe("OrderNotFoundError")
+        }
+      }
+    })
+
+    it("should call updateStatus with correct arguments", async () => {
+      let capturedId: OrderId | null = null
+      let capturedStatus: string | null = null
+
+      const mockRepo = createMockRepo({
+        findById: () => Effect.succeed(Option.some(testOrder)),
+        updateStatus: (orderId, status) => {
+          capturedId = orderId
+          capturedStatus = status
+          return Effect.succeed(Option.some(cancelledOrder))
+        },
+        getItems: () => Effect.succeed([testOrderItem])
+      })
+
+      const testLayer = OrderServiceLive.pipe(Layer.provide(mockRepo))
+
+      await Effect.gen(function* () {
+        const service = yield* OrderService
+        return yield* service.cancel(testOrderId)
+      }).pipe(Effect.provide(testLayer), Effect.runPromise)
+
+      expect(capturedId).toBe(testOrderId)
+      expect(capturedStatus).toBe("CANCELLED")
+    })
+  })
+
+  describe("confirm", () => {
+    it("should confirm a CREATED order", async () => {
+      const mockRepo = createMockRepo({
+        findById: () => Effect.succeed(Option.some(testOrder)),
+        updateStatus: () => Effect.succeed(Option.some(confirmedOrder)),
+        getItems: () => Effect.succeed([testOrderItem])
+      })
+
+      const testLayer = OrderServiceLive.pipe(Layer.provide(mockRepo))
+
+      const result = await Effect.gen(function* () {
+        const service = yield* OrderService
+        return yield* service.confirm(testOrderId)
+      }).pipe(Effect.provide(testLayer), Effect.runPromise)
+
+      expect(result.order.status).toBe("CONFIRMED")
+      expect(result.items.length).toBe(1)
+    })
+
+    it("should return existing order when already CONFIRMED (idempotent)", async () => {
+      const mockRepo = createMockRepo({
+        findById: () => Effect.succeed(Option.some(confirmedOrder)),
+        getItems: () => Effect.succeed([testOrderItem]),
+        updateStatus: () => { throw new Error("updateStatus should not be called") }
+      })
+
+      const testLayer = OrderServiceLive.pipe(Layer.provide(mockRepo))
+
+      const result = await Effect.gen(function* () {
+        const service = yield* OrderService
+        return yield* service.confirm(testOrderId)
+      }).pipe(Effect.provide(testLayer), Effect.runPromise)
+
+      expect(result.order.status).toBe("CONFIRMED")
+      expect(result.items.length).toBe(1)
+    })
+
+    it("should fail with InvalidOrderStatusError when order is CANCELLED", async () => {
+      const mockRepo = createMockRepo({
+        findById: () => Effect.succeed(Option.some(cancelledOrder))
+      })
+
+      const testLayer = OrderServiceLive.pipe(Layer.provide(mockRepo))
+
+      const exit = await Effect.gen(function* () {
+        const service = yield* OrderService
+        return yield* service.confirm(testOrderId)
+      }).pipe(Effect.provide(testLayer), Effect.runPromiseExit)
+
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) {
+        const error = exit.cause
+        expect(error._tag).toBe("Fail")
+        if (error._tag === "Fail") {
+          expect(error.error._tag).toBe("InvalidOrderStatusError")
+          expect((error.error as InvalidOrderStatusError).currentStatus).toBe("CANCELLED")
+          expect((error.error as InvalidOrderStatusError).attemptedStatus).toBe("CONFIRMED")
+        }
+      }
+    })
+
+    it("should fail with OrderNotFoundError when order does not exist", async () => {
+      const mockRepo = createMockRepo({
+        findById: () => Effect.succeed(Option.none())
+      })
+
+      const testLayer = OrderServiceLive.pipe(Layer.provide(mockRepo))
+
+      const exit = await Effect.gen(function* () {
+        const service = yield* OrderService
+        return yield* service.confirm("nonexistent-id" as OrderId)
+      }).pipe(Effect.provide(testLayer), Effect.runPromiseExit)
+
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) {
+        const error = exit.cause
+        expect(error._tag).toBe("Fail")
+        if (error._tag === "Fail") {
+          expect(error.error._tag).toBe("OrderNotFoundError")
+        }
+      }
+    })
+
+    it("should call updateStatus with correct arguments", async () => {
+      let capturedId: OrderId | null = null
+      let capturedStatus: string | null = null
+
+      const mockRepo = createMockRepo({
+        findById: () => Effect.succeed(Option.some(testOrder)),
+        updateStatus: (orderId, status) => {
+          capturedId = orderId
+          capturedStatus = status
+          return Effect.succeed(Option.some(confirmedOrder))
+        },
+        getItems: () => Effect.succeed([testOrderItem])
+      })
+
+      const testLayer = OrderServiceLive.pipe(Layer.provide(mockRepo))
+
+      await Effect.gen(function* () {
+        const service = yield* OrderService
+        return yield* service.confirm(testOrderId)
+      }).pipe(Effect.provide(testLayer), Effect.runPromise)
+
+      expect(capturedId).toBe(testOrderId)
+      expect(capturedStatus).toBe("CONFIRMED")
     })
   })
 })

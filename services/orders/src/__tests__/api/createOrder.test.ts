@@ -99,7 +99,9 @@ const createMockOrderService = (overrides: {
     ),
     findById: overrides.findById ?? (() =>
       Effect.succeed({ order: testOrder, items: [testOrderItem] })
-    )
+    ),
+    cancel: () => Effect.succeed({ order: testOrder, items: [testOrderItem] }),
+    confirm: () => Effect.succeed({ order: testOrder, items: [testOrderItem] })
   })
 }
 
