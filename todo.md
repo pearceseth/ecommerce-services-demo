@@ -21,14 +21,14 @@
 _Stateless mock service - implement first for testing other services_
 
 ### Setup
-- [ ] Create payments service scaffold (hello world HTTP server with Effect.js)
-- [ ] Add configurable latency via MOCK_LATENCY_MS environment variable
-- [ ] Add configurable failure rate via MOCK_FAILURE_RATE environment variable
+- [x] Create payments service scaffold (hello world HTTP server with Effect.js)
+- [x] Add configurable latency via MOCK_LATENCY_MS environment variable
+- [x] Add configurable failure rate via MOCK_FAILURE_RATE environment variable
 
 ### Endpoints
-- [ ] POST /payments/authorize - Authorize payment, return authorization_id
-- [ ] POST /payments/capture/{authorization_id} - Capture authorized payment
-- [ ] POST /payments/void/{authorization_id} - Void authorization (compensation)
+- [x] POST /payments/authorize - Authorize payment, return authorization_id
+- [x] POST /payments/capture/{authorization_id} - Capture authorized payment
+- [x] POST /payments/void/{authorization_id} - Void authorization (compensation)
 
 ---
 

@@ -6,7 +6,7 @@ import { CreateProductRequest, ProductIdParams } from "../domain/Product.js"
 import { AddStockRequest } from "../domain/Adjustment.js"
 import { ProductService } from "../services/ProductService.js"
 import { InventoryService } from "../services/InventoryService.js"
-import type { DuplicateSkuError, ProductNotFoundError, DuplicateAdjustmentError, InsufficientStockError } from "../domain/errors.js"
+import type { DuplicateSkuError, ProductNotFoundError, DuplicateAdjustmentError } from "../domain/errors.js"
 
 const createProduct = Effect.gen(function* () {
   // Parse and validate request body

@@ -2,8 +2,8 @@ services:
   postgres:
     image: postgres:18-alpine
     environment:
-      POSTGRES_USER: ecommerce
-      POSTGRES_PASSWORD: ecommerce
+      POSTGRES_USER: ecommerce  
+      POSTGRES_PASSWORD: ecommerce  # Real system should not store sensitive info in source like this
       POSTGRES_DB: ecommerce
     ports:
       - "5432:5432"
@@ -55,7 +55,7 @@ services:
       DATABASE_PORT: 5432
       DATABASE_NAME: ecommerce
       DATABASE_USER: ecommerce
-      DATABASE_PASSWORD: ecommerce
+      DATABASE_PASSWORD: ecommerce # Real system should not store sensitive info in source like this
       OTEL_SERVICE_NAME: inventory-service
       OTEL_EXPORTER_OTLP_ENDPOINT: http://observability:4318
     depends_on:
@@ -64,5 +64,19 @@ services:
       observability:
         condition: service_started
 
+  payment:
+    build:
+      context: ./services/payment
+      dockerfile: Dockerfile
+    ports:
+      - "3002:3002"
+    environment:
+      PORT: 3002
+      OTEL_SERVICE_NAME: payment-service
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://observability:4318
+    depends_on:
+      observability:
+        condition: service_started
+        
 volumes:
   postgres_data:
