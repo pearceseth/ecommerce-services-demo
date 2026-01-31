@@ -2,26 +2,47 @@ import { HttpRouter, HttpServer, HttpServerResponse } from "@effect/platform"
 import { NodeHttpServer, NodeRuntime } from "@effect/platform-node"
 import { Effect, Layer } from "effect"
 import { createServer } from "node:http"
+import { HealthRoutes } from "./api/health.js"
+import { AppLive } from "./layers.js"
+import { EdgeApiConfig } from "./config.js"
+import { TelemetryLive } from "./telemetry.js"
 
-const router = HttpRouter.empty.pipe(
+// Root route - service identification
+const rootRoute = HttpRouter.empty.pipe(
   HttpRouter.get(
     "/",
-    Effect.succeed(HttpServerResponse.text("Hello from Edge API"))
-  ),
-  HttpRouter.get(
-    "/health",
-    HttpServerResponse.json({ status: "healthy" })
+    Effect.succeed(
+      HttpServerResponse.text("Edge API - E-commerce Demo")
+    )
   )
 )
 
-const HttpLive = router.pipe(
-  HttpServer.serve(),
-  HttpServer.withLogAddress,
-  Layer.provide(
-    NodeHttpServer.layer(createServer, {
-      port: Number(process.env.PORT) || 3000
-    })
-  )
+// Compose all routes
+const router = HttpRouter.empty.pipe(
+  HttpRouter.mount("/", rootRoute),
+  HttpRouter.mount("/", HealthRoutes)
 )
 
-Layer.launch(HttpLive).pipe(NodeRuntime.runMain)
+// Create HTTP server with dynamic port from config
+const HttpLive = Layer.unwrapEffect(
+  Effect.gen(function* () {
+    const config = yield* EdgeApiConfig
+
+    return router.pipe(
+      HttpServer.serve(),
+      HttpServer.withLogAddress,
+      Layer.provide(
+        NodeHttpServer.layer(createServer, { port: config.port })
+      )
+    )
+  })
+)
+
+// Compose final application layer
+const MainLive = HttpLive.pipe(
+  Layer.provide(AppLive),
+  Layer.provide(TelemetryLive)
+)
+
+// Launch the server
+Layer.launch(MainLive).pipe(NodeRuntime.runMain)

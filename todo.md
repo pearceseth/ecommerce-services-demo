@@ -43,9 +43,9 @@ _Manages order records and lifecycle states_
 
 ### Endpoints
 - [x] POST /orders - Create order from ledger entry (idempotent via order_ledger_id)
-- [ ] GET /orders/{order_id} - Get order details with items
-- [ ] PUT /orders/{order_id}/cancel - Cancel order (compensation, idempotent)
-- [ ] PUT /orders/{order_id}/confirm - Confirm order (final step, idempotent)
+- [x] GET /orders/{order_id} - Get order details with items
+- [x] PUT /orders/{order_id}/cancel - Cancel order (compensation, idempotent)
+- [x] PUT /orders/{order_id}/confirm - Confirm order (final step, idempotent)
 
 ---
 
@@ -53,7 +53,7 @@ _Manages order records and lifecycle states_
 _Entry point for client requests - receives orders and authorizes payments_
 
 ### Setup
-- [ ] Add database connection and health check endpoint
+- [x] Add database connection and health check endpoint
 - [ ] Create database migration for order_ledger, order_ledger_items, outbox tables
 
 ### Endpoints
