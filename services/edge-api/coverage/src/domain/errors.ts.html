@@ -3,7 +3,7 @@
 <html lang="en">
 
 <head>
-    <title>Code coverage report for src/api/health.ts</title>
+    <title>Code coverage report for src/domain/errors.ts</title>
     <meta charset="utf-8" />
     <link rel="stylesheet" href="../../prettify.css" />
     <link rel="stylesheet" href="../../base.css" />
@@ -19,34 +19,34 @@
 <body>
 <div class='wrapper'>
     <div class='pad1'>
-        <h1><a href="../../index.html">All files</a> / <a href="index.html">src/api</a> health.ts</h1>
+        <h1><a href="../../index.html">All files</a> / <a href="index.html">src/domain</a> errors.ts</h1>
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">100% </span>
+                <span class="strong">0% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>8/8</span>
+                <span class='fraction'>0/0</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">100% </span>
+                <span class="strong">0% </span>
                 <span class="quiet">Branches</span>
                 <span class='fraction'>0/0</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">100% </span>
+                <span class="strong">0% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>2/2</span>
+                <span class='fraction'>0/0</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">100% </span>
+                <span class="strong">0% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>8/8</span>
+                <span class='fraction'>0/0</span>
             </div>
         
             
@@ -61,7 +61,7 @@
             </div>
         </template>
     </div>
-    <div class='status-line high'></div>
+    <div class='status-line low'></div>
     <pre><table class="coverage">
 <tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
 <a name='L2'></a><a href='#L2'>2</a>
@@ -107,25 +107,6 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-yes">9x</span>
-<span class="cline-any cline-yes">9x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">9x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">6x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">6x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -138,48 +119,67 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import { HttpRouter, HttpServerResponse } from "@effect/platform"
-import { SqlClient } from "@effect/sql"
-import { Effect } from "effect"
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import { Data } from "effect"
 &nbsp;
-// Exported for testing - the core health check logic
-export const healthCheck = Effect.gen(function* () {
-  const sql = yield* SqlClient.SqlClient
-  const startTime = Date.now()
+// Payment authorization was declined
+export class PaymentDeclinedError extends Data.TaggedError("PaymentDeclinedError")&lt;{
+  readonly userId: string
+  readonly amountCents: number
+  readonly declineCode: string
+  readonly reason: string
+  readonly isRetryable: boolean
+}&gt; {}
 &nbsp;
-  // Test database connection
-  yield* sql`SELECT 1`
+// Payment gateway unavailable
+export class PaymentGatewayError extends Data.TaggedError("PaymentGatewayError")&lt;{
+  readonly reason: string
+  readonly isRetryable: boolean
+}&gt; {}
 &nbsp;
-  const latencyMs = Date.now() - startTime
+// Duplicate request (idempotency check)
+export class DuplicateRequestError extends Data.TaggedError("DuplicateRequestError")&lt;{
+  readonly clientRequestId: string
+  readonly existingOrderLedgerId: string
+  readonly existingStatus: string
+}&gt; {}
 &nbsp;
-  return yield* HttpServerResponse.json({
-    status: "healthy",
-    service: "edge-api",
-    database: "connected",
-    latency_ms: latencyMs,
-    timestamp: new Date().toISOString()
-  })
-}).pipe(
-  Effect.catchAll((error) =&gt;
-    HttpServerResponse.json(
-      {
-        status: "unhealthy",
-        service: "edge-api",
-        database: "disconnected",
-        error: String(error),
-        timestamp: new Date().toISOString()
-      },
-      { status: 503 }
-    )
-  )
-)
+// Product not found when looking up prices
+export class ProductNotFoundError extends Data.TaggedError("ProductNotFoundError")&lt;{
+  readonly productId: string
+}&gt; {}
 &nbsp;
-export const HealthRoutes = HttpRouter.empty.pipe(
-  HttpRouter.get("/health", healthCheck)
-)
+// Missing idempotency key header
+export class MissingIdempotencyKeyError extends Data.TaggedError("MissingIdempotencyKeyError")&lt;{
+  readonly _void?: never
+}&gt; {}
+&nbsp;
+// Database transaction failed
+export class TransactionError extends Data.TaggedError("TransactionError")&lt;{
+  readonly operation: string
+  readonly cause: unknown
+}&gt; {}
 &nbsp;</pre></td></tr></table></pre>
 
                 <div class='push'></div><!-- for sticky footer -->

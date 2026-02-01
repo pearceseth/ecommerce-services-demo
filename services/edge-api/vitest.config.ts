@@ -16,7 +16,9 @@ export default defineConfig({
         "src/server.ts",
         "src/db.ts",
         "src/layers.ts",
-        "src/telemetry.ts"
+        "src/telemetry.ts",
+        "src/repositories/**", // Excluded - covered by integration tests
+        "src/services/PaymentClientLive.ts" // Excluded - covered by integration tests
       ]
     }
   }
