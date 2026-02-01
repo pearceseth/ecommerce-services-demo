@@ -18,3 +18,4 @@ The goal is to ensure the quality of the staged changes.
 * Ensure that test coverage is at least 80%. 
 * If there are issues found, build a report to output to the user. 
 * If no issues are found, report all clear to the user.
+* Once you are done, edit the plan document and change the Status near the top of the document from PENDING to COMPLETE.

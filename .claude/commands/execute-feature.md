@@ -14,6 +14,4 @@ description: "Implement code changes specified in a given plan document."
 4. Once you have a good idea of what needs to be done please implement the changes. 
 5. Start a new git branch locally with a name based on the feature. 
 6. Each change should start with unit tests. Always use Test Driven Development. You will create tests that break until the implementation is correct. The goal is that each change has at least 80% test coverage in order to be accepted. There should be some details about this in the plan document. 
-7. When completed, launch a sub-agent to review the changes based on the best-practices.md file. 
-8. Once you are done, edit the plan document and change the Status near the top of the document from PENDING to COMPLETE.
-9. Output to the user a summary of the changes and the test coverage once completed. Also include example curl commands for testing the change if applicable. Also output the branch name. Do not commit or push the changes. 
+7. Output to the user a summary of the changes and the test coverage once completed. Also include example curl commands for testing the change if applicable. Also output the branch name. Do not commit or push the changes. 

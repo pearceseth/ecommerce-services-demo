@@ -3,7 +3,7 @@
 <html lang="en">
 
 <head>
-    <title>Code coverage report for src/api/health.ts</title>
+    <title>Code coverage report for src/services/OrderService.ts</title>
     <meta charset="utf-8" />
     <link rel="stylesheet" href="../../prettify.css" />
     <link rel="stylesheet" href="../../base.css" />
@@ -19,34 +19,34 @@
 <body>
 <div class='wrapper'>
     <div class='pad1'>
-        <h1><a href="../../index.html">All files</a> / <a href="index.html">src/api</a> health.ts</h1>
+        <h1><a href="../../index.html">All files</a> / <a href="index.html">src/services</a> OrderService.ts</h1>
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">100% </span>
+                <span class="strong">0% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>8/8</span>
+                <span class='fraction'>0/0</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">100% </span>
+                <span class="strong">0% </span>
                 <span class="quiet">Branches</span>
                 <span class='fraction'>0/0</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">100% </span>
+                <span class="strong">0% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>2/2</span>
+                <span class='fraction'>0/0</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">100% </span>
+                <span class="strong">0% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>8/8</span>
+                <span class='fraction'>0/0</span>
             </div>
         
             
@@ -61,7 +61,7 @@
             </div>
         </template>
     </div>
-    <div class='status-line high'></div>
+    <div class='status-line low'></div>
     <pre><table class="coverage">
 <tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
 <a name='L2'></a><a href='#L2'>2</a>
@@ -107,25 +107,6 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-yes">9x</span>
-<span class="cline-any cline-yes">9x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">9x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">6x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">6x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -138,48 +119,67 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import { HttpRouter, HttpServerResponse } from "@effect/platform"
-import { SqlClient } from "@effect/sql"
-import { Effect } from "effect"
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import { Context, Effect } from "effect"
+import type { CreateOrderRequest } from "../domain/OrderLedger.js"
+import type {
+  PaymentDeclinedError,
+  PaymentGatewayError,
+  DuplicateRequestError
+} from "../domain/errors.js"
+import type { SqlError } from "@effect/sql"
 &nbsp;
-// Exported for testing - the core health check logic
-export const healthCheck = Effect.gen(function* () {
-  const sql = yield* SqlClient.SqlClient
-  const startTime = Date.now()
+export interface CreateOrderResult {
+  readonly orderLedgerId: string
+  readonly status: string
+}
 &nbsp;
-  // Test database connection
-  yield* sql`SELECT 1`
-&nbsp;
-  const latencyMs = Date.now() - startTime
-&nbsp;
-  return yield* HttpServerResponse.json({
-    status: "healthy",
-    service: "edge-api",
-    database: "connected",
-    latency_ms: latencyMs,
-    timestamp: new Date().toISOString()
-  })
-}).pipe(
-  Effect.catchAll((error) =&gt;
-    HttpServerResponse.json(
-      {
-        status: "unhealthy",
-        service: "edge-api",
-        database: "disconnected",
-        error: String(error),
-        timestamp: new Date().toISOString()
-      },
-      { status: 503 }
-    )
-  )
-)
-&nbsp;
-export const HealthRoutes = HttpRouter.empty.pipe(
-  HttpRouter.get("/health", healthCheck)
-)
+export class OrderService extends Context.Tag("OrderService")&lt;
+  OrderService,
+  {
+    /**
+     * Process a new order request.
+     *
+     * 1. Check for duplicate (idempotency)
+     * 2. Create ledger entry
+     * 3. Authorize payment
+     * 4. Update ledger with authorization result
+     *
+     * Returns order_ledger_id and status on success.
+     */
+    readonly createOrder: (
+      idempotencyKey: string,
+      request: CreateOrderRequest
+    ) =&gt; Effect.Effect&lt;
+      CreateOrderResult,
+      | DuplicateRequestError
+      | PaymentDeclinedError
+      | PaymentGatewayError
+      | SqlError.SqlError
+    &gt;
+  }
+&gt;() {}
 &nbsp;</pre></td></tr></table></pre>
 
                 <div class='push'></div><!-- for sticky footer -->
