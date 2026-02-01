@@ -1,4 +1,4 @@
-# ecommerce-services-demo
+# ecommerce-services-demo (WIP)
 
 This is a demo project of an ecommerce backend system meant to learn Typescript and the Effect ecosystem as well as practice some design patterns like:
 
