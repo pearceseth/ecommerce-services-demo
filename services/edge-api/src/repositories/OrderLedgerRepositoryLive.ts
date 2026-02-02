@@ -34,6 +34,29 @@ interface OrderLedgerItemRow {
   created_at: string
 }
 
+// Row type for joined order_ledger + order_ledger_items query
+interface OrderLedgerWithItemsRow {
+  // Ledger fields
+  id: string
+  client_request_id: string
+  user_id: string
+  email: string
+  status: string
+  total_amount_cents: number
+  currency: string
+  payment_authorization_id: string | null
+  retry_count: number
+  next_retry_at: string | null
+  created_at: string
+  updated_at: string
+  // Item fields (nullable due to LEFT JOIN)
+  item_id: string | null
+  product_id: string | null
+  quantity: number | null
+  unit_price_cents: number | null
+  item_created_at: string | null
+}
+
 // Convert database row to domain model
 const rowToOrderLedger = (row: OrderLedgerRow): OrderLedger =>
   new OrderLedger({
@@ -165,6 +188,46 @@ export const OrderLedgerRepositoryLive = Layer.effect(
           `
 
           return rowToOrderLedger(rows[0])
+        }),
+
+      findByIdWithItems: (orderLedgerId: OrderLedgerId) =>
+        Effect.gen(function* () {
+          // Single query with LEFT JOIN to fetch ledger and items together
+          const rows = yield* sql<OrderLedgerWithItemsRow>`
+            SELECT
+              ol.id, ol.client_request_id, ol.user_id, ol.email, ol.status,
+              ol.total_amount_cents, ol.currency, ol.payment_authorization_id,
+              ol.retry_count, ol.next_retry_at, ol.created_at, ol.updated_at,
+              oli.id as item_id, oli.product_id, oli.quantity, oli.unit_price_cents,
+              oli.created_at as item_created_at
+            FROM order_ledger ol
+            LEFT JOIN order_ledger_items oli ON oli.order_ledger_id = ol.id
+            WHERE ol.id = ${orderLedgerId}
+          `
+
+          if (rows.length === 0) {
+            return Option.none()
+          }
+
+          // Extract ledger from first row
+          const firstRow = rows[0]
+          const ledger = rowToOrderLedger(firstRow)
+
+          // Collect items from all rows (filter out null items from LEFT JOIN)
+          const items = rows
+            .filter((row): row is OrderLedgerWithItemsRow & { item_id: string } => row.item_id !== null)
+            .map((row) =>
+              new OrderLedgerItem({
+                id: row.item_id,
+                orderLedgerId: row.id as OrderLedgerId,
+                productId: row.product_id as ProductId,
+                quantity: row.quantity!,
+                unitPriceCents: row.unit_price_cents!,
+                createdAt: DateTime.unsafeFromDate(new Date(row.item_created_at!))
+              })
+            )
+
+          return Option.some({ ledger, items })
         })
     }
   })

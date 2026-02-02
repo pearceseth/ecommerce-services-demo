@@ -58,17 +58,13 @@ _Entry point for client requests - receives orders and authorizes payments_
 
 ### Endpoints
 - [x] POST /orders - Validate, create ledger entry, authorize payment, write outbox event
-- [ ] GET /orders/{order_ledger_id} - Get order status and details
+- [x] GET /orders/{order_ledger_id} - Get order status and details
 
 ### Features
 - [x] Idempotency using Idempotency-Key header (client_request_id)
 - [x] Payment authorization via Payments Service (synchronous call)
 - [x] Atomic outbox write with ledger update in single transaction
 - [x] NOTIFY order_events after successful authorization
-
-### Testing
-- [ ] Add integration tests for repository layer using Testcontainers (PostgreSQL)
-- [ ] Add integration tests for PaymentClientLive with mock Payment Service
 
 ---
 

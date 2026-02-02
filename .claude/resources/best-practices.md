@@ -301,6 +301,65 @@ const correct = Effect.gen(function* () {
 
 This is critical when using `SELECT FOR UPDATE` for concurrency control - without `withTransaction`, locks are released between statements and race conditions become possible.
 
+### Loading Related Data with JOINs
+When loading an entity with its related data (e.g., an order with its items), prefer a single query with a JOIN over multiple sequential queries. One database round trip is better than two.
+
+**Anti-pattern - Multiple queries:**
+```typescript
+// DON'T: Two round trips to the database
+findByIdWithItems: (orderId: OrderId) =>
+  Effect.gen(function* () {
+    const orderRows = yield* sql`SELECT * FROM orders WHERE id = ${orderId}`
+    if (orderRows.length === 0) return Option.none()
+
+    const order = rowToOrder(orderRows[0])
+
+    // Second query - unnecessary round trip!
+    const itemRows = yield* sql`SELECT * FROM order_items WHERE order_id = ${orderId}`
+    const items = itemRows.map(rowToOrderItem)
+
+    return Option.some({ order, items })
+  })
+```
+
+**Preferred - Single query with LEFT JOIN:**
+```typescript
+// DO: Single round trip with LEFT JOIN
+findByIdWithItems: (orderId: OrderId) =>
+  Effect.gen(function* () {
+    const rows = yield* sql<OrderWithItemsRow>`
+      SELECT
+        o.id, o.user_id, o.status, o.created_at,
+        oi.id as item_id, oi.product_id, oi.quantity, oi.unit_price_cents
+      FROM orders o
+      LEFT JOIN order_items oi ON oi.order_id = o.id
+      WHERE o.id = ${orderId}
+    `
+
+    if (rows.length === 0) return Option.none()
+
+    // Extract parent from first row
+    const order = rowToOrder(rows[0])
+
+    // Collect children, filtering out nulls from LEFT JOIN
+    const items = rows
+      .filter((row): row is OrderWithItemsRow & { item_id: string } => row.item_id !== null)
+      .map(rowToOrderItem)
+
+    return Option.some({ order, items })
+  })
+```
+
+**Why LEFT JOIN:**
+- Returns the parent even if it has no children (items array will be empty)
+- If parent doesn't exist, returns 0 rows → `Option.none()`
+- Single network round trip reduces latency
+
+**When to use multiple queries instead:**
+- When the related data is very large and you need pagination
+- When you're loading data from different databases/services
+- When the JOIN would create excessive row duplication (many-to-many with large datasets)
+
 ### Idempotency
 - Use unique constraints (e.g., SKU, idempotency_key) as defense-in-depth against duplicates
 - **Avoid check-then-insert patterns** - they have race condition windows where work can be duplicated even if the final insert fails

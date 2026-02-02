@@ -61,5 +61,13 @@ export class OrderLedgerRepository extends Context.Tag("OrderLedgerRepository")<
     readonly markAuthorizationFailed: (
       orderLedgerId: OrderLedgerId
     ) => Effect.Effect<OrderLedger, SqlError.SqlError>
+
+    /**
+     * Find order ledger by ID with its items.
+     * Used for the GET /orders/{order_ledger_id} endpoint.
+     */
+    readonly findByIdWithItems: (
+      orderLedgerId: OrderLedgerId
+    ) => Effect.Effect<Option.Option<{ ledger: OrderLedger; items: ReadonlyArray<OrderLedgerItem> }>, SqlError.SqlError>
   }
 >() {}
