@@ -94,3 +94,8 @@ export class DuplicateOrderResponse extends Schema.Class<DuplicateOrderResponse>
   order_ledger_id: Schema.String,
   status: Schema.String
 }) {}
+
+// Path parameter schema for GET /orders/:order_ledger_id
+export const OrderLedgerIdParams = Schema.Struct({
+  order_ledger_id: OrderLedgerId
+})

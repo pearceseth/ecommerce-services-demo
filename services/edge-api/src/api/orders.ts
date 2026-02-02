@@ -2,13 +2,14 @@ import { HttpRouter, HttpServerRequest, HttpServerResponse } from "@effect/platf
 import type { HttpServerError } from "@effect/platform"
 import { SqlError } from "@effect/sql"
 import { Effect, type ParseResult } from "effect"
-import { CreateOrderRequest } from "../domain/OrderLedger.js"
+import { CreateOrderRequest, OrderLedgerIdParams } from "../domain/OrderLedger.js"
 import { OrderService } from "../services/OrderService.js"
 import {
   MissingIdempotencyKeyError,
   type PaymentDeclinedError,
   type PaymentGatewayError,
-  type DuplicateRequestError
+  type DuplicateRequestError,
+  type OrderLedgerNotFoundError
 } from "../domain/errors.js"
 
 // POST /orders - Create a new order
@@ -129,7 +130,79 @@ export const createOrder = Effect.gen(function* () {
   })
 )
 
+// GET /orders/:order_ledger_id - Get order status and details
+export const getOrderStatus = Effect.gen(function* () {
+  // 1. Parse and validate path parameter
+  const { order_ledger_id: orderLedgerId } = yield* HttpRouter.schemaPathParams(OrderLedgerIdParams)
+
+  // 2. Fetch order status from service
+  const orderService = yield* OrderService
+  const result = yield* orderService.getOrderStatus(orderLedgerId)
+
+  yield* Effect.logInfo("Order status retrieved", {
+    orderLedgerId: result.orderLedgerId,
+    status: result.status
+  })
+
+  // 3. Return 200 OK with snake_case response
+  return HttpServerResponse.json({
+    order_ledger_id: result.orderLedgerId,
+    client_request_id: result.clientRequestId,
+    status: result.status,
+    user_id: result.userId,
+    email: result.email,
+    total_amount_cents: result.totalAmountCents,
+    currency: result.currency,
+    payment_authorization_id: result.paymentAuthorizationId,
+    created_at: result.createdAt,
+    updated_at: result.updatedAt,
+    items: result.items.map(item => ({
+      product_id: item.productId,
+      quantity: item.quantity,
+      unit_price_cents: item.unitPriceCents
+    }))
+  })
+}).pipe(
+  Effect.withSpan("GET /orders/:order_ledger_id"),
+  Effect.flatten,
+  Effect.catchTags({
+    // Path parameter validation errors (400 Bad Request)
+    ParseError: () =>
+      HttpServerResponse.json(
+        {
+          error: "validation_error",
+          message: "Invalid order_ledger_id format. Must be a valid UUID."
+        },
+        { status: 400 }
+      ),
+
+    // Order ledger not found (404 Not Found)
+    OrderLedgerNotFoundError: (error: OrderLedgerNotFoundError) =>
+      HttpServerResponse.json(
+        {
+          error: "not_found",
+          message: `Order with ID ${error.orderLedgerId} not found`
+        },
+        { status: 404 }
+      ),
+
+    // SQL errors (500 Internal Server Error)
+    SqlError: (error: SqlError.SqlError) =>
+      Effect.gen(function* () {
+        yield* Effect.logError("Database error in getOrderStatus", { error })
+        return HttpServerResponse.json(
+          {
+            error: "internal_error",
+            message: "An unexpected error occurred"
+          },
+          { status: 500 }
+        )
+      }).pipe(Effect.flatten)
+  })
+)
+
 // Export routes
 export const OrderRoutes = HttpRouter.empty.pipe(
-  HttpRouter.post("/orders", createOrder)
+  HttpRouter.post("/orders", createOrder),
+  HttpRouter.get("/orders/:order_ledger_id", getOrderStatus)
 )

@@ -165,6 +165,35 @@ export const OrderLedgerRepositoryLive = Layer.effect(
           `
 
           return rowToOrderLedger(rows[0])
+        }),
+
+      findByIdWithItems: (orderLedgerId: OrderLedgerId) =>
+        Effect.gen(function* () {
+          // Query the ledger entry
+          const ledgerRows = yield* sql<OrderLedgerRow>`
+            SELECT id, client_request_id, user_id, email, status,
+                   total_amount_cents, currency, payment_authorization_id,
+                   retry_count, next_retry_at, created_at, updated_at
+            FROM order_ledger
+            WHERE id = ${orderLedgerId}
+          `
+
+          if (ledgerRows.length === 0) {
+            return Option.none()
+          }
+
+          const ledger = rowToOrderLedger(ledgerRows[0])
+
+          // Query the items
+          const itemRows = yield* sql<OrderLedgerItemRow>`
+            SELECT id, order_ledger_id, product_id, quantity, unit_price_cents, created_at
+            FROM order_ledger_items
+            WHERE order_ledger_id = ${orderLedgerId}
+          `
+
+          const items = itemRows.map(rowToOrderLedgerItem)
+
+          return Option.some({ ledger, items })
         })
     }
   })

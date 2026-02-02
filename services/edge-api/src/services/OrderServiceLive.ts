@@ -1,9 +1,9 @@
-import { Layer, Effect, Option } from "effect"
-import { OrderService, type CreateOrderResult } from "./OrderService.js"
+import { Layer, Effect, Option, DateTime } from "effect"
+import { OrderService, type CreateOrderResult, type OrderStatusResult } from "./OrderService.js"
 import { OrderLedgerRepository } from "../repositories/OrderLedgerRepository.js"
 import { PaymentClient } from "./PaymentClient.js"
-import type { CreateOrderRequest } from "../domain/OrderLedger.js"
-import { DuplicateRequestError } from "../domain/errors.js"
+import type { CreateOrderRequest, OrderLedgerId } from "../domain/OrderLedger.js"
+import { DuplicateRequestError, OrderLedgerNotFoundError } from "../domain/errors.js"
 
 // Placeholder price per item in cents - will be replaced with actual inventory lookup
 const PLACEHOLDER_PRICE_CENTS = 1000
@@ -115,7 +115,42 @@ export const OrderServiceLive = Layer.effect(
             orderLedgerId: updatedLedger.id,
             status: updatedLedger.status
           } satisfies CreateOrderResult
-        })
+        }),
+
+      getOrderStatus: (orderLedgerId: string) =>
+        Effect.gen(function* () {
+          // Cast to branded type
+          const ledgerId = orderLedgerId as OrderLedgerId
+
+          // Fetch ledger with items
+          const result = yield* ledgerRepo.findByIdWithItems(ledgerId).pipe(
+            Effect.flatMap(
+              Option.match({
+                onNone: () => Effect.fail(new OrderLedgerNotFoundError({ orderLedgerId })),
+                onSome: Effect.succeed
+              })
+            )
+          )
+
+          // Map to response format
+          return {
+            orderLedgerId: result.ledger.id,
+            clientRequestId: result.ledger.clientRequestId,
+            status: result.ledger.status,
+            userId: result.ledger.userId,
+            email: result.ledger.email,
+            totalAmountCents: result.ledger.totalAmountCents,
+            currency: result.ledger.currency,
+            paymentAuthorizationId: result.ledger.paymentAuthorizationId,
+            createdAt: DateTime.toDateUtc(result.ledger.createdAt).toISOString(),
+            updatedAt: DateTime.toDateUtc(result.ledger.updatedAt).toISOString(),
+            items: result.items.map(item => ({
+              productId: item.productId,
+              quantity: item.quantity,
+              unitPriceCents: item.unitPriceCents
+            }))
+          } satisfies OrderStatusResult
+        }).pipe(Effect.withSpan("OrderService.getOrderStatus"))
     }
   })
 )

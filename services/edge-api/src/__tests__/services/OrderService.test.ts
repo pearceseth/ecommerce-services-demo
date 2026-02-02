@@ -4,8 +4,8 @@ import { OrderServiceLive } from "../../services/OrderServiceLive.js"
 import { OrderService } from "../../services/OrderService.js"
 import { OrderLedgerRepository } from "../../repositories/OrderLedgerRepository.js"
 import { PaymentClient, type AuthorizePaymentResult } from "../../services/PaymentClient.js"
-import { CreateOrderRequest, OrderLedger, type OrderLedgerId, type UserId } from "../../domain/OrderLedger.js"
-import { DuplicateRequestError, PaymentDeclinedError, PaymentGatewayError } from "../../domain/errors.js"
+import { CreateOrderRequest, OrderLedger, OrderLedgerItem, type OrderLedgerId, type UserId, type ProductId } from "../../domain/OrderLedger.js"
+import { DuplicateRequestError, PaymentDeclinedError, PaymentGatewayError, OrderLedgerNotFoundError } from "../../domain/errors.js"
 
 // Valid order request data
 const validRequestData = {
@@ -56,6 +56,23 @@ const createMockOrderLedger = (overrides?: Partial<{
   })
 }
 
+// Create mock OrderLedgerItem for testing
+const createMockOrderLedgerItem = (overrides?: Partial<{
+  productId: string
+  quantity: number
+  unitPriceCents: number
+}>): OrderLedgerItem => {
+  const now = DateTime.unsafeNow()
+  return new OrderLedgerItem({
+    id: "550e8400-e29b-41d4-a716-446655440100",
+    orderLedgerId: "550e8400-e29b-41d4-a716-446655440099" as OrderLedgerId,
+    productId: (overrides?.productId ?? "550e8400-e29b-41d4-a716-446655440001") as ProductId,
+    quantity: overrides?.quantity ?? 2,
+    unitPriceCents: overrides?.unitPriceCents ?? 1000,
+    createdAt: now
+  })
+}
+
 // Create mock repository layer
 const createMockRepository = (config: {
   findResult: Option.Option<OrderLedger>
@@ -63,6 +80,7 @@ const createMockRepository = (config: {
   updateResult?: OrderLedger
   shouldFailOnCreate?: boolean
   shouldFailOnUpdate?: boolean
+  findByIdWithItemsResult?: Option.Option<{ ledger: OrderLedger; items: ReadonlyArray<OrderLedgerItem> }>
 }) => {
   return Layer.succeed(OrderLedgerRepository, {
     findByClientRequestId: () => Effect.succeed(config.findResult),
@@ -84,7 +102,8 @@ const createMockRepository = (config: {
     },
     markAuthorizationFailed: () => Effect.succeed(createMockOrderLedger({
       status: "AUTHORIZATION_FAILED"
-    }))
+    })),
+    findByIdWithItems: () => Effect.succeed(config.findByIdWithItemsResult ?? Option.none())
   })
 }
 
@@ -340,6 +359,203 @@ describe("OrderService", () => {
 
         // 3 items + 2 items = 5 items * 1000 cents = 5000 cents
         expect(capturedAmount).toBe(5000)
+      })
+    })
+  })
+
+  describe("getOrderStatus", () => {
+    describe("success cases", () => {
+      it("should return order status and items when found", async () => {
+        const mockLedger = createMockOrderLedger({
+          id: "550e8400-e29b-41d4-a716-446655440099",
+          status: "AUTHORIZED",
+          paymentAuthorizationId: "auth_123"
+        })
+
+        const mockItems = [
+          createMockOrderLedgerItem({
+            productId: "550e8400-e29b-41d4-a716-446655440001",
+            quantity: 2,
+            unitPriceCents: 1000
+          }),
+          createMockOrderLedgerItem({
+            productId: "550e8400-e29b-41d4-a716-446655440002",
+            quantity: 1,
+            unitPriceCents: 2500
+          })
+        ]
+
+        const repositoryLayer = createMockRepository({
+          findResult: Option.none(),
+          findByIdWithItemsResult: Option.some({ ledger: mockLedger, items: mockItems })
+        })
+
+        const paymentLayer = createMockPaymentClient({
+          shouldSucceed: true,
+          result: {
+            authorizationId: "auth_123",
+            status: "AUTHORIZED",
+            amountCents: 2000,
+            currency: "USD",
+            createdAt: new Date().toISOString()
+          }
+        })
+
+        const serviceLayer = OrderServiceLive.pipe(
+          Layer.provide(repositoryLayer),
+          Layer.provide(paymentLayer)
+        )
+
+        const program = Effect.gen(function* () {
+          const service = yield* OrderService
+          return yield* service.getOrderStatus("550e8400-e29b-41d4-a716-446655440099")
+        })
+
+        const result = await program.pipe(
+          Effect.provide(serviceLayer),
+          Effect.runPromise
+        )
+
+        expect(result.orderLedgerId).toBe("550e8400-e29b-41d4-a716-446655440099")
+        expect(result.status).toBe("AUTHORIZED")
+        expect(result.email).toBe("customer@example.com")
+        expect(result.paymentAuthorizationId).toBe("auth_123")
+        expect(result.items).toHaveLength(2)
+        expect(result.items[0].productId).toBe("550e8400-e29b-41d4-a716-446655440001")
+        expect(result.items[0].quantity).toBe(2)
+        expect(result.items[0].unitPriceCents).toBe(1000)
+      })
+
+      it("should return order with empty items array when ledger has no items", async () => {
+        const mockLedger = createMockOrderLedger({
+          id: "550e8400-e29b-41d4-a716-446655440099",
+          status: "AWAITING_AUTHORIZATION"
+        })
+
+        const repositoryLayer = createMockRepository({
+          findResult: Option.none(),
+          findByIdWithItemsResult: Option.some({ ledger: mockLedger, items: [] })
+        })
+
+        const paymentLayer = createMockPaymentClient({
+          shouldSucceed: true,
+          result: {
+            authorizationId: "auth_123",
+            status: "AUTHORIZED",
+            amountCents: 2000,
+            currency: "USD",
+            createdAt: new Date().toISOString()
+          }
+        })
+
+        const serviceLayer = OrderServiceLive.pipe(
+          Layer.provide(repositoryLayer),
+          Layer.provide(paymentLayer)
+        )
+
+        const program = Effect.gen(function* () {
+          const service = yield* OrderService
+          return yield* service.getOrderStatus("550e8400-e29b-41d4-a716-446655440099")
+        })
+
+        const result = await program.pipe(
+          Effect.provide(serviceLayer),
+          Effect.runPromise
+        )
+
+        expect(result.orderLedgerId).toBe("550e8400-e29b-41d4-a716-446655440099")
+        expect(result.status).toBe("AWAITING_AUTHORIZATION")
+        expect(result.items).toHaveLength(0)
+      })
+    })
+
+    describe("error cases", () => {
+      it("should fail with OrderLedgerNotFoundError when order does not exist", async () => {
+        const repositoryLayer = createMockRepository({
+          findResult: Option.none(),
+          findByIdWithItemsResult: Option.none()
+        })
+
+        const paymentLayer = createMockPaymentClient({
+          shouldSucceed: true,
+          result: {
+            authorizationId: "auth_123",
+            status: "AUTHORIZED",
+            amountCents: 2000,
+            currency: "USD",
+            createdAt: new Date().toISOString()
+          }
+        })
+
+        const serviceLayer = OrderServiceLive.pipe(
+          Layer.provide(repositoryLayer),
+          Layer.provide(paymentLayer)
+        )
+
+        const program = Effect.gen(function* () {
+          const service = yield* OrderService
+          return yield* service.getOrderStatus("00000000-0000-0000-0000-000000000000")
+        })
+
+        const result = await program.pipe(
+          Effect.provide(serviceLayer),
+          Effect.either,
+          Effect.runPromise
+        )
+
+        expect(result._tag).toBe("Left")
+        if (result._tag === "Left") {
+          expect(result.left._tag).toBe("OrderLedgerNotFoundError")
+          const error = result.left as OrderLedgerNotFoundError
+          expect(error.orderLedgerId).toBe("00000000-0000-0000-0000-000000000000")
+        }
+      })
+    })
+
+    describe("response format", () => {
+      it("should return timestamps as ISO strings", async () => {
+        const mockLedger = createMockOrderLedger({
+          id: "550e8400-e29b-41d4-a716-446655440099",
+          status: "AUTHORIZED"
+        })
+
+        const repositoryLayer = createMockRepository({
+          findResult: Option.none(),
+          findByIdWithItemsResult: Option.some({ ledger: mockLedger, items: [] })
+        })
+
+        const paymentLayer = createMockPaymentClient({
+          shouldSucceed: true,
+          result: {
+            authorizationId: "auth_123",
+            status: "AUTHORIZED",
+            amountCents: 2000,
+            currency: "USD",
+            createdAt: new Date().toISOString()
+          }
+        })
+
+        const serviceLayer = OrderServiceLive.pipe(
+          Layer.provide(repositoryLayer),
+          Layer.provide(paymentLayer)
+        )
+
+        const program = Effect.gen(function* () {
+          const service = yield* OrderService
+          return yield* service.getOrderStatus("550e8400-e29b-41d4-a716-446655440099")
+        })
+
+        const result = await program.pipe(
+          Effect.provide(serviceLayer),
+          Effect.runPromise
+        )
+
+        // Timestamps should be strings (ISO format)
+        expect(typeof result.createdAt).toBe("string")
+        expect(typeof result.updatedAt).toBe("string")
+        // They should be parseable as dates
+        expect(new Date(result.createdAt).toString()).not.toBe("Invalid Date")
+        expect(new Date(result.updatedAt).toString()).not.toBe("Invalid Date")
       })
     })
   })

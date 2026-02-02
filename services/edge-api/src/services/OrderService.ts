@@ -3,13 +3,33 @@ import type { CreateOrderRequest } from "../domain/OrderLedger.js"
 import type {
   PaymentDeclinedError,
   PaymentGatewayError,
-  DuplicateRequestError
+  DuplicateRequestError,
+  OrderLedgerNotFoundError
 } from "../domain/errors.js"
 import type { SqlError } from "@effect/sql"
 
 export interface CreateOrderResult {
   readonly orderLedgerId: string
   readonly status: string
+}
+
+// Result type for getOrderStatus
+export interface OrderStatusResult {
+  readonly orderLedgerId: string
+  readonly clientRequestId: string
+  readonly status: string
+  readonly userId: string
+  readonly email: string
+  readonly totalAmountCents: number
+  readonly currency: string
+  readonly paymentAuthorizationId: string | null
+  readonly createdAt: string
+  readonly updatedAt: string
+  readonly items: ReadonlyArray<{
+    readonly productId: string
+    readonly quantity: number
+    readonly unitPriceCents: number
+  }>
 }
 
 export class OrderService extends Context.Tag("OrderService")<
@@ -33,6 +53,18 @@ export class OrderService extends Context.Tag("OrderService")<
       | DuplicateRequestError
       | PaymentDeclinedError
       | PaymentGatewayError
+      | SqlError.SqlError
+    >
+
+    /**
+     * Get order status and details by order_ledger_id.
+     * Returns full ledger info including items.
+     */
+    readonly getOrderStatus: (
+      orderLedgerId: string
+    ) => Effect.Effect<
+      OrderStatusResult,
+      | OrderLedgerNotFoundError
       | SqlError.SqlError
     >
   }

@@ -37,3 +37,8 @@ export class TransactionError extends Data.TaggedError("TransactionError")<{
   readonly operation: string
   readonly cause: unknown
 }> {}
+
+// Order ledger entry not found
+export class OrderLedgerNotFoundError extends Data.TaggedError("OrderLedgerNotFoundError")<{
+  readonly orderLedgerId: string
+}> {}
