@@ -1,19 +1,69 @@
-import { Effect, Schedule, Duration, Queue, Data } from "effect"
+import { Effect, Schedule, Duration, Queue, Data, Match } from "effect"
 import { PgClient } from "@effect/sql-pg"
+import { SqlClient } from "@effect/sql"
 import pg from "pg"
 import { OrchestratorConfig } from "./config.js"
+import { OutboxRepository } from "./repositories/OutboxRepository.js"
+import { SagaExecutor } from "./services/SagaExecutor.js"
 
 /**
  * Process pending outbox events.
- * For scaffold, this is a placeholder that logs.
- * Future: Implement actual event claiming and saga execution.
+ * Claims events with SELECT FOR UPDATE SKIP LOCKED,
+ * executes saga for each, and marks as processed.
  */
 export const processEvents = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient
+  const outboxRepo = yield* OutboxRepository
+  const sagaExecutor = yield* SagaExecutor
+
   yield* Effect.logDebug("Processing pending events...")
-  // Placeholder for future implementation:
-  // 1. SELECT FROM outbox WHERE status = 'PENDING' ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 10
-  // 2. For each event, execute saga step
-  // 3. UPDATE outbox SET status = 'PROCESSED', processed_at = NOW()
+
+  // Process in a transaction to maintain locks until all events are handled
+  yield* sql.withTransaction(
+    Effect.gen(function* () {
+      // Claim pending events
+      const { events } = yield* outboxRepo.claimPendingEvents(10)
+
+      if (events.length === 0) {
+        yield* Effect.logDebug("No pending events to process")
+        return
+      }
+
+      yield* Effect.logInfo("Processing outbox events", { count: events.length })
+
+      // Process each event sequentially
+      for (const event of events) {
+        const result = yield* sagaExecutor.executeSaga(event).pipe(
+          Effect.withSpan("process-outbox-event", {
+            attributes: { eventId: event.id, eventType: event.eventType }
+          })
+        )
+
+        // Mark based on result
+        yield* Match.value(result).pipe(
+          Match.tag("Completed", () => outboxRepo.markProcessed(event.id)),
+          Match.tag("Failed", () => outboxRepo.markFailed(event.id)),
+          Match.tag("RequiresRetry", ({ error }) =>
+            Effect.logInfo("Event will be retried", {
+              eventId: event.id,
+              reason: error
+            })
+          ),
+          Match.tag("RequiresCompensation", ({ orderLedgerId }) =>
+            Effect.gen(function* () {
+              yield* outboxRepo.markFailed(event.id)
+              yield* Effect.logWarning("Event requires compensation", {
+                eventId: event.id,
+                orderLedgerId
+              })
+            })
+          ),
+          Match.exhaustive
+        )
+      }
+    })
+  )
+
   yield* Effect.logDebug("Event processing complete")
 })
 
