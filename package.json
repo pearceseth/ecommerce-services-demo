@@ -10,6 +10,7 @@
     "dev:edge-api": "npm run dev --workspace=@ecommerce/edge-api",
     "dev:inventory": "npm run dev --workspace=@ecommerce/inventory",
     "dev:orders": "npm run dev --workspace=@ecommerce/orders",
+    "dev:orchestrator": "npm run dev --workspace=@ecommerce/orchestrator",
     "db:migrate": "./scripts/migrate.sh",
     "lint": "eslint . --ext .ts",
     "typecheck": "tsc --build"

@@ -51,7 +51,7 @@ packages/          # Shared libraries (future)
 
 See `engineering-design.md` for comprehensive design documentation including Mermaid diagrams.
 
-See .claude/resources/best-practices.md for coding best practices for this project.ß
+See .claude/resources/best-practices.md for coding best practices for this project.
 
 **Pattern**: Saga Orchestration with Ledger-First Design + Transactional Outbox
 
