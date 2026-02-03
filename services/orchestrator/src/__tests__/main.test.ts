@@ -1,7 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
-import { Effect, Layer, Queue } from "effect"
+import { Effect, Layer, Queue, DateTime } from "effect"
+import { SqlClient } from "@effect/sql"
 import { OrchestratorConfig } from "../config.js"
 import { processEvents } from "../main.js"
+import { OutboxRepository, type ClaimResult } from "../repositories/OutboxRepository.js"
+import { SagaExecutor, type SagaExecutionResult } from "../services/SagaExecutor.js"
+import { OutboxEvent, type OutboxEventId } from "../domain/OutboxEvent.js"
 
 const createTestConfig = (overrides: Partial<{
   pollIntervalMs: number
@@ -16,20 +20,97 @@ const createTestConfig = (overrides: Partial<{
     paymentsServiceUrl: overrides.paymentsServiceUrl ?? "http://localhost:3002"
   })
 
+// Mock SqlClient that supports withTransaction
+const createMockSqlClient = () =>
+  Layer.succeed(SqlClient.SqlClient, {
+    withTransaction: <A, E, R>(effect: Effect.Effect<A, E, R>) => effect
+  } as any)
+
+const createMockOutboxRepo = (events: OutboxEvent[] = []) =>
+  Layer.succeed(OutboxRepository, {
+    claimPendingEvents: () => Effect.succeed({ events } satisfies ClaimResult),
+    markProcessed: () => Effect.void,
+    markFailed: () => Effect.void
+  })
+
+const createMockSagaExecutor = (result: SagaExecutionResult = { _tag: "Completed", orderLedgerId: "test", finalStatus: "COMPLETED" }) =>
+  Layer.succeed(SagaExecutor, {
+    executeSaga: () => Effect.succeed(result)
+  })
+
+const createProcessEventsTestLayer = (events: OutboxEvent[] = []) =>
+  Layer.mergeAll(
+    createMockSqlClient(),
+    createMockOutboxRepo(events),
+    createMockSagaExecutor()
+  )
+
 describe("processEvents", () => {
-  it("should complete successfully as a placeholder", async () => {
-    const result = await processEvents.pipe(Effect.runPromise)
+  it("should complete successfully when no events pending", async () => {
+    const testLayer = createProcessEventsTestLayer([])
+
+    const result = await processEvents.pipe(
+      Effect.provide(testLayer),
+      Effect.runPromise
+    )
     expect(result).toBeUndefined()
   })
 
+  it("should process pending events and mark as processed", async () => {
+    const now = DateTime.unsafeNow()
+    const testEvent = new OutboxEvent({
+      id: "event-123" as OutboxEventId,
+      aggregateType: "OrderLedger",
+      aggregateId: "ledger-123",
+      eventType: "OrderAuthorized",
+      payload: {
+        order_ledger_id: "ledger-123",
+        user_id: "user-456",
+        email: "test@example.com",
+        total_amount_cents: 2999,
+        currency: "USD",
+        payment_authorization_id: "auth-789"
+      },
+      status: "PENDING",
+      createdAt: now,
+      processedAt: null
+    })
+
+    let processedEventIds: string[] = []
+    const testLayer = Layer.mergeAll(
+      createMockSqlClient(),
+      Layer.succeed(OutboxRepository, {
+        claimPendingEvents: () => Effect.succeed({ events: [testEvent] }),
+        markProcessed: (eventId) => {
+          processedEventIds.push(eventId)
+          return Effect.void
+        },
+        markFailed: () => Effect.void
+      }),
+      createMockSagaExecutor()
+    )
+
+    await processEvents.pipe(
+      Effect.provide(testLayer),
+      Effect.runPromise
+    )
+
+    expect(processedEventIds).toContain("event-123")
+  })
+
   it("should be an Effect that can be composed", async () => {
+    const testLayer = createProcessEventsTestLayer([])
+
     const composed = Effect.gen(function* () {
       yield* processEvents
       yield* processEvents
       return "completed"
     })
 
-    const result = await composed.pipe(Effect.runPromise)
+    const result = await composed.pipe(
+      Effect.provide(testLayer),
+      Effect.runPromise
+    )
     expect(result).toBe("completed")
   })
 })
