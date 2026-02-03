@@ -72,10 +72,10 @@ _Entry point for client requests - receives orders and authorizes payments_
 _Saga execution engine - implement last as it depends on all other services_
 
 ### Setup
-- [ ] Create orchestrator service scaffold (Effect.js, no HTTP server needed)
-- [ ] Add database connection for ledger and outbox access
-- [ ] Implement LISTEN subscription for order_events channel
-- [ ] Implement polling fallback (every 5s) for missed notifications
+- [x] Create orchestrator service scaffold (Effect.js, no HTTP server needed)
+- [x] Add database connection for ledger and outbox access
+- [x] Implement LISTEN subscription for order_events channel
+- [x] Implement polling fallback (every 5s) for missed notifications
 
 ### Saga Execution
 - [ ] Implement outbox event claiming with SELECT FOR UPDATE SKIP LOCKED
