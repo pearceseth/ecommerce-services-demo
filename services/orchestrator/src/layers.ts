@@ -8,6 +8,7 @@ import { OrdersClientLive } from "./clients/OrdersClientLive.js"
 import { InventoryClientLive } from "./clients/InventoryClientLive.js"
 import { PaymentsClientLive } from "./clients/PaymentsClientLive.js"
 import { SagaExecutorLive } from "./services/SagaExecutorLive.js"
+import { CompensationExecutorLive } from "./services/CompensationExecutorLive.js"
 
 // HTTP client layer for all service clients
 const HttpClientLive = NodeHttpClient.layer
@@ -25,10 +26,16 @@ const ClientsLive = Layer.mergeAll(
   PaymentsClientLive
 ).pipe(Layer.provide(HttpClientLive))
 
-// Service layers (depend on repositories and clients)
+// Compensation executor (depends on clients)
+const CompensationLive = CompensationExecutorLive.pipe(
+  Layer.provide(ClientsLive)
+)
+
+// Service layers (depend on repositories, clients, and compensation executor)
 const ServicesLive = SagaExecutorLive.pipe(
   Layer.provide(RepositoriesLive),
-  Layer.provide(ClientsLive)
+  Layer.provide(ClientsLive),
+  Layer.provide(CompensationLive)
 )
 
 // Complete application layer
@@ -37,5 +44,6 @@ export const AppLive = Layer.mergeAll(
   OrchestratorConfigLive,
   RepositoriesLive,
   ClientsLive,
+  CompensationLive,
   ServicesLive
 )

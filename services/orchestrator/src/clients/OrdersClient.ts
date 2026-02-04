@@ -1,5 +1,5 @@
 import { Context, Effect } from "effect"
-import type { OrderCreationError, OrderConfirmationError, ServiceConnectionError } from "../domain/errors.js"
+import type { OrderCreationError, OrderConfirmationError, OrderCancellationError, ServiceConnectionError } from "../domain/errors.js"
 
 export interface CreateOrderParams {
   readonly orderLedgerId: string
@@ -23,6 +23,11 @@ export interface ConfirmOrderResult {
   readonly status: "CONFIRMED"
 }
 
+export interface CancelOrderResult {
+  readonly orderId: string
+  readonly status: "CANCELLED"
+}
+
 export class OrdersClient extends Context.Tag("OrdersClient")<
   OrdersClient,
   {
@@ -41,5 +46,13 @@ export class OrdersClient extends Context.Tag("OrdersClient")<
     readonly confirmOrder: (
       orderId: string
     ) => Effect.Effect<ConfirmOrderResult, OrderConfirmationError | ServiceConnectionError>
+
+    /**
+     * Cancel an order (compensation).
+     * Idempotent: returns success if already cancelled.
+     */
+    readonly cancelOrder: (
+      orderId: string
+    ) => Effect.Effect<CancelOrderResult, OrderCancellationError | ServiceConnectionError>
   }
 >() {}

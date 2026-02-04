@@ -1,5 +1,6 @@
 import { Layer, Effect, Option, Schema } from "effect"
-import { SagaExecutor, type SagaExecutionResult, type SagaCompleted, type SagaFailed, type SagaRequiresRetry, type SagaRequiresCompensation } from "./SagaExecutor.js"
+import { SagaExecutor, type SagaExecutionResult, type SagaCompleted, type SagaFailed, type SagaRequiresRetry, type SagaCompensated } from "./SagaExecutor.js"
+import { CompensationExecutor } from "./CompensationExecutor.js"
 import { LedgerRepository } from "../repositories/LedgerRepository.js"
 import { OrdersClient } from "../clients/OrdersClient.js"
 import { InventoryClient } from "../clients/InventoryClient.js"
@@ -12,12 +13,19 @@ type StepResult =
   | { readonly _tag: "StepSuccess"; readonly orderId?: string }
   | { readonly _tag: "StepFailed"; readonly result: SagaExecutionResult }
 
+interface HandleStepErrorParams {
+  readonly orderLedgerId: string
+  readonly currentStatus: OrderLedgerStatus
+  readonly orderId: string | null
+  readonly paymentAuthorizationId: string | null
+  readonly error: SagaStepError
+}
+
 const handleStepError = (
-  orderLedgerId: string, 
-  currentStatus: OrderLedgerStatus,
-  error: SagaStepError
-): Effect.Effect<StepResult> =>
+  params: HandleStepErrorParams
+): Effect.Effect<StepResult, never, CompensationExecutor | LedgerRepository> =>
   Effect.gen(function* () {
+    const { orderLedgerId, currentStatus, orderId, paymentAuthorizationId, error } = params
     const isRetryable = "isRetryable" in error && error.isRetryable
 
     if (isRetryable) {
@@ -38,20 +46,38 @@ const handleStepError = (
       } satisfies StepResult
     }
 
-    yield* Effect.logError("Saga step failed with permanent error", {
+    // Permanent failure - execute compensation
+    yield* Effect.logError("Saga step failed with permanent error - starting compensation", {
       orderLedgerId,
       errorType: error._tag,
-      requiresCompensation: true
+      lastSuccessfulStatus: currentStatus
     })
+
+    const ledgerRepo = yield* LedgerRepository
+    const compensationExecutor = yield* CompensationExecutor
+
+    // Transition to COMPENSATING
+    yield* ledgerRepo.updateStatus(orderLedgerId as OrderLedgerId, "COMPENSATING")
+
+    // Execute compensation
+    const compensationResult = yield* compensationExecutor.executeCompensation({
+      orderLedgerId,
+      orderId,
+      paymentAuthorizationId,
+      lastSuccessfulStatus: currentStatus
+    })
+
+    // Transition to FAILED
+    yield* ledgerRepo.updateStatus(orderLedgerId as OrderLedgerId, "FAILED")
 
     return {
       _tag: "StepFailed",
       result: {
-        _tag: "RequiresCompensation",
+        _tag: "Compensated",
         orderLedgerId,
-        finalStatus: "COMPENSATING",
-        error: error._tag
-      } satisfies SagaRequiresCompensation
+        finalStatus: "FAILED",
+        compensationSteps: compensationResult.stepsExecuted
+      } satisfies SagaCompensated
     } satisfies StepResult
   })
 
@@ -62,6 +88,7 @@ export const SagaExecutorLive = Layer.effect(
     const ordersClient = yield* OrdersClient
     const inventoryClient = yield* InventoryClient
     const paymentsClient = yield* PaymentsClient
+    const compensationExecutor = yield* CompensationExecutor
 
     const executeSagaSteps = (
       ledger: OrderLedger,
@@ -70,6 +97,7 @@ export const SagaExecutorLive = Layer.effect(
     ): Effect.Effect<SagaExecutionResult> =>
       Effect.gen(function* () {
         const orderLedgerId = ledger.id
+        const paymentAuthorizationId = payload.payment_authorization_id
         let currentStatus = ledger.status
         let orderId: string | null = ledger.orderId
 
@@ -92,7 +120,13 @@ export const SagaExecutorLive = Layer.effect(
               _tag: "StepSuccess",
               orderId: result.orderId
             })),
-            Effect.catchAll((error) => handleStepError(orderLedgerId, error))
+            Effect.catchAll((error) => handleStepError({
+              orderLedgerId,
+              currentStatus,
+              orderId,
+              paymentAuthorizationId,
+              error
+            }))
           )
 
           if (stepResult._tag === "StepFailed") {
@@ -117,7 +151,13 @@ export const SagaExecutorLive = Layer.effect(
             }))
           }).pipe(
             Effect.map((): StepResult => ({ _tag: "StepSuccess" })),
-            Effect.catchAll((error) => handleStepError(orderLedgerId, currentStatus, error))
+            Effect.catchAll((error) => handleStepError({
+              orderLedgerId,
+              currentStatus,
+              orderId,
+              paymentAuthorizationId,
+              error
+            }))
           )
 
           if (stepResult._tag === "StepFailed") {
@@ -134,11 +174,17 @@ export const SagaExecutorLive = Layer.effect(
           yield* Effect.logInfo("Executing Step 3: Capture Payment", { orderLedgerId })
 
           const stepResult = yield* paymentsClient.capturePayment({
-            authorizationId: payload.payment_authorization_id,
+            authorizationId: paymentAuthorizationId,
             idempotencyKey: `capture-${orderLedgerId}`
           }).pipe(
             Effect.map((): StepResult => ({ _tag: "StepSuccess" })),
-            Effect.catchAll((error) => handleStepError(orderLedgerId, currentStatus, error))
+            Effect.catchAll((error) => handleStepError({
+              orderLedgerId,
+              currentStatus,
+              orderId,
+              paymentAuthorizationId,
+              error
+            }))
           )
 
           if (stepResult._tag === "StepFailed") {
@@ -156,7 +202,13 @@ export const SagaExecutorLive = Layer.effect(
 
           const stepResult = yield* ordersClient.confirmOrder(orderId!).pipe(
             Effect.map((): StepResult => ({ _tag: "StepSuccess" })),
-            Effect.catchAll((error) => handleStepError(orderLedgerId, currentStatus, error))
+            Effect.catchAll((error) => handleStepError({
+              orderLedgerId,
+              currentStatus,
+              orderId,
+              paymentAuthorizationId,
+              error
+            }))
           )
 
           if (stepResult._tag === "StepFailed") {
@@ -174,7 +226,10 @@ export const SagaExecutorLive = Layer.effect(
           orderLedgerId,
           finalStatus: "COMPLETED"
         } satisfies SagaCompleted
-      })
+      }).pipe(
+        Effect.provideService(LedgerRepository, ledgerRepo),
+        Effect.provideService(CompensationExecutor, compensationExecutor)
+      )
 
     return {
       executeSaga: (event: OutboxEvent) =>

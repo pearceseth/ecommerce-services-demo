@@ -2,10 +2,11 @@ import { describe, it, expect } from "vitest"
 import { Effect, Layer, Option, DateTime } from "effect"
 import { SagaExecutor } from "../services/SagaExecutor.js"
 import { SagaExecutorLive } from "../services/SagaExecutorLive.js"
+import { CompensationExecutor, type CompensationContext, type CompensationResult } from "../services/CompensationExecutor.js"
 import { LedgerRepository, type LedgerWithItems } from "../repositories/LedgerRepository.js"
-import { OrdersClient, type CreateOrderParams, type CreateOrderResult, type ConfirmOrderResult } from "../clients/OrdersClient.js"
-import { InventoryClient, type ReserveStockParams, type ReserveStockResult } from "../clients/InventoryClient.js"
-import { PaymentsClient, type CapturePaymentParams, type CapturePaymentResult } from "../clients/PaymentsClient.js"
+import { OrdersClient, type CreateOrderParams, type CreateOrderResult, type ConfirmOrderResult, type CancelOrderResult } from "../clients/OrdersClient.js"
+import { InventoryClient, type ReserveStockParams, type ReserveStockResult, type ReleaseStockParams, type ReleaseStockResult } from "../clients/InventoryClient.js"
+import { PaymentsClient, type CapturePaymentParams, type CapturePaymentResult, type VoidPaymentParams, type VoidPaymentResult } from "../clients/PaymentsClient.js"
 import { OutboxEvent, type OutboxEventId } from "../domain/OutboxEvent.js"
 import { OrderLedger, OrderLedgerItem, type OrderLedgerId, type OrderLedgerStatus, type UserId, type ProductId } from "../domain/OrderLedger.js"
 import {
@@ -94,15 +95,18 @@ const createMockLedgerRepo = (overrides: {
 const createMockOrdersClient = (overrides: {
   createOrder?: (params: CreateOrderParams) => Effect.Effect<CreateOrderResult, OrderCreationError | ServiceConnectionError>
   confirmOrder?: (orderId: string) => Effect.Effect<ConfirmOrderResult, any>
+  cancelOrder?: (orderId: string) => Effect.Effect<CancelOrderResult, any>
 } = {}) => {
   return Layer.succeed(OrdersClient, {
     createOrder: overrides.createOrder ?? (() => Effect.succeed({ orderId: "order-789", status: "CREATED" })),
-    confirmOrder: overrides.confirmOrder ?? (() => Effect.succeed({ orderId: "order-789", status: "CONFIRMED" }))
+    confirmOrder: overrides.confirmOrder ?? (() => Effect.succeed({ orderId: "order-789", status: "CONFIRMED" })),
+    cancelOrder: overrides.cancelOrder ?? (() => Effect.succeed({ orderId: "order-789", status: "CANCELLED" }))
   })
 }
 
 const createMockInventoryClient = (overrides: {
   reserveStock?: (params: ReserveStockParams) => Effect.Effect<ReserveStockResult, InventoryReservationError | ServiceConnectionError>
+  releaseStock?: (params: ReleaseStockParams) => Effect.Effect<ReleaseStockResult, any>
 } = {}) => {
   return Layer.succeed(InventoryClient, {
     reserveStock: overrides.reserveStock ?? (() => Effect.succeed({
@@ -110,12 +114,18 @@ const createMockInventoryClient = (overrides: {
       reservationIds: ["res-1"],
       lineItemsReserved: 1,
       totalQuantityReserved: 2
+    })),
+    releaseStock: overrides.releaseStock ?? (() => Effect.succeed({
+      orderId: "order-789",
+      releasedCount: 2,
+      totalQuantityRestored: 5
     }))
   })
 }
 
 const createMockPaymentsClient = (overrides: {
   capturePayment?: (params: CapturePaymentParams) => Effect.Effect<CapturePaymentResult, PaymentCaptureError | ServiceConnectionError>
+  voidPayment?: (params: VoidPaymentParams) => Effect.Effect<VoidPaymentResult, any>
 } = {}) => {
   return Layer.succeed(PaymentsClient, {
     capturePayment: overrides.capturePayment ?? (() => Effect.succeed({
@@ -125,6 +135,24 @@ const createMockPaymentsClient = (overrides: {
       amountCents: 5999,
       currency: "USD",
       capturedAt: "2024-01-15T10:30:00Z"
+    })),
+    voidPayment: overrides.voidPayment ?? (() => Effect.succeed({
+      voidId: "void-123",
+      authorizationId: "auth-456",
+      status: "VOIDED",
+      voidedAt: "2024-01-15T10:30:00Z"
+    }))
+  })
+}
+
+const createMockCompensationExecutor = (overrides: {
+  executeCompensation?: (context: CompensationContext) => Effect.Effect<CompensationResult>
+} = {}) => {
+  return Layer.succeed(CompensationExecutor, {
+    executeCompensation: overrides.executeCompensation ?? ((context) => Effect.succeed({
+      _tag: "CompensationCompleted" as const,
+      orderLedgerId: context.orderLedgerId,
+      stepsExecuted: ["void_payment", "cancel_order"]
     }))
   })
 }
@@ -133,13 +161,15 @@ const createTestLayer = (
   ledgerRepoOverrides: Parameters<typeof createMockLedgerRepo>[0] = {},
   ordersClientOverrides: Parameters<typeof createMockOrdersClient>[0] = {},
   inventoryClientOverrides: Parameters<typeof createMockInventoryClient>[0] = {},
-  paymentsClientOverrides: Parameters<typeof createMockPaymentsClient>[0] = {}
+  paymentsClientOverrides: Parameters<typeof createMockPaymentsClient>[0] = {},
+  compensationExecutorOverrides: Parameters<typeof createMockCompensationExecutor>[0] = {}
 ) => {
   return SagaExecutorLive.pipe(
     Layer.provide(createMockLedgerRepo(ledgerRepoOverrides)),
     Layer.provide(createMockOrdersClient(ordersClientOverrides)),
     Layer.provide(createMockInventoryClient(inventoryClientOverrides)),
-    Layer.provide(createMockPaymentsClient(paymentsClientOverrides))
+    Layer.provide(createMockPaymentsClient(paymentsClientOverrides)),
+    Layer.provide(createMockCompensationExecutor(compensationExecutorOverrides))
   )
 }
 
@@ -446,14 +476,21 @@ describe("SagaExecutor", () => {
     })
   })
 
-  describe("executeSaga - permanent errors requiring compensation", () => {
-    it("should return RequiresCompensation for non-retryable OrderCreationError", async () => {
+  describe("executeSaga - permanent errors triggering compensation", () => {
+    it("should return Compensated for non-retryable OrderCreationError", async () => {
       const ledgerId = "ledger-123"
       const ledger = createTestLedger(ledgerId, "AUTHORIZED")
       const items = [createTestItem("item-1", ledgerId)]
+      const statusUpdates: OrderLedgerStatus[] = []
 
       const testLayer = createTestLayer(
-        { findByIdWithItems: () => Effect.succeed(Option.some({ ledger, items })) },
+        {
+          findByIdWithItems: () => Effect.succeed(Option.some({ ledger, items })),
+          updateStatus: (id, status) => {
+            statusUpdates.push(status)
+            return Effect.succeed(createTestLedger(id, status))
+          }
+        },
         {
           createOrder: () => Effect.fail(new OrderCreationError({
             orderLedgerId: ledgerId,
@@ -469,19 +506,30 @@ describe("SagaExecutor", () => {
         return yield* executor.executeSaga(createTestOutboxEvent(ledgerId))
       }).pipe(Effect.provide(testLayer), Effect.runPromise)
 
-      expect(result._tag).toBe("RequiresCompensation")
-      if (result._tag === "RequiresCompensation") {
-        expect(result.error).toBe("OrderCreationError")
+      expect(result._tag).toBe("Compensated")
+      if (result._tag === "Compensated") {
+        expect(result.finalStatus).toBe("FAILED")
+        expect(result.compensationSteps).toBeDefined()
       }
+      // Verify state transitions
+      expect(statusUpdates).toContain("COMPENSATING")
+      expect(statusUpdates).toContain("FAILED")
     })
 
-    it("should return RequiresCompensation for insufficient stock", async () => {
+    it("should return Compensated for insufficient stock", async () => {
       const ledgerId = "ledger-123"
       const ledger = createTestLedger(ledgerId, "ORDER_CREATED", "order-789")
       const items = [createTestItem("item-1", ledgerId)]
+      const statusUpdates: OrderLedgerStatus[] = []
 
       const testLayer = createTestLayer(
-        { findByIdWithItems: () => Effect.succeed(Option.some({ ledger, items })) },
+        {
+          findByIdWithItems: () => Effect.succeed(Option.some({ ledger, items })),
+          updateStatus: (id, status) => {
+            statusUpdates.push(status)
+            return Effect.succeed(createTestLedger(id, status))
+          }
+        },
         {},
         {
           reserveStock: () => Effect.fail(new InventoryReservationError({
@@ -503,18 +551,27 @@ describe("SagaExecutor", () => {
         return yield* executor.executeSaga(createTestOutboxEvent(ledgerId))
       }).pipe(Effect.provide(testLayer), Effect.runPromise)
 
-      expect(result._tag).toBe("RequiresCompensation")
-      if (result._tag === "RequiresCompensation") {
-        expect(result.error).toBe("InventoryReservationError")
+      expect(result._tag).toBe("Compensated")
+      if (result._tag === "Compensated") {
+        expect(result.finalStatus).toBe("FAILED")
       }
+      expect(statusUpdates).toContain("COMPENSATING")
+      expect(statusUpdates).toContain("FAILED")
     })
 
-    it("should return RequiresCompensation for voided authorization", async () => {
+    it("should return Compensated for voided authorization during payment capture", async () => {
       const ledgerId = "ledger-123"
       const ledger = createTestLedger(ledgerId, "INVENTORY_RESERVED", "order-789")
+      const statusUpdates: OrderLedgerStatus[] = []
 
       const testLayer = createTestLayer(
-        { findByIdWithItems: () => Effect.succeed(Option.some({ ledger, items: [] })) },
+        {
+          findByIdWithItems: () => Effect.succeed(Option.some({ ledger, items: [] })),
+          updateStatus: (id, status) => {
+            statusUpdates.push(status)
+            return Effect.succeed(createTestLedger(id, status))
+          }
+        },
         {},
         {},
         {
@@ -532,9 +589,53 @@ describe("SagaExecutor", () => {
         return yield* executor.executeSaga(createTestOutboxEvent(ledgerId))
       }).pipe(Effect.provide(testLayer), Effect.runPromise)
 
-      expect(result._tag).toBe("RequiresCompensation")
-      if (result._tag === "RequiresCompensation") {
-        expect(result.error).toBe("PaymentCaptureError")
+      expect(result._tag).toBe("Compensated")
+      if (result._tag === "Compensated") {
+        expect(result.finalStatus).toBe("FAILED")
+      }
+      expect(statusUpdates).toContain("COMPENSATING")
+      expect(statusUpdates).toContain("FAILED")
+    })
+
+    it("should include compensation steps in result", async () => {
+      const ledgerId = "ledger-123"
+      const ledger = createTestLedger(ledgerId, "ORDER_CREATED", "order-789")
+      const items = [createTestItem("item-1", ledgerId)]
+
+      // Custom compensation executor to verify steps
+      const testLayer = createTestLayer(
+        {
+          findByIdWithItems: () => Effect.succeed(Option.some({ ledger, items })),
+          updateStatus: (id, status) => Effect.succeed(createTestLedger(id, status))
+        },
+        {},
+        {
+          reserveStock: () => Effect.fail(new InventoryReservationError({
+            orderId: "order-789",
+            reason: "Insufficient stock",
+            statusCode: 409,
+            isRetryable: false
+          }))
+        },
+        {},
+        {
+          executeCompensation: (ctx) => Effect.succeed({
+            _tag: "CompensationCompleted" as const,
+            orderLedgerId: ctx.orderLedgerId,
+            stepsExecuted: ["void_payment", "cancel_order"]
+          })
+        }
+      )
+
+      const result = await Effect.gen(function* () {
+        const executor = yield* SagaExecutor
+        return yield* executor.executeSaga(createTestOutboxEvent(ledgerId))
+      }).pipe(Effect.provide(testLayer), Effect.runPromise)
+
+      expect(result._tag).toBe("Compensated")
+      if (result._tag === "Compensated") {
+        expect(result.compensationSteps).toContain("void_payment")
+        expect(result.compensationSteps).toContain("cancel_order")
       }
     })
   })

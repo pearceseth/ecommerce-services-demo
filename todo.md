@@ -78,20 +78,20 @@ _Saga execution engine - implement last as it depends on all other services_
 - [x] Implement polling fallback (every 5s) for missed notifications
 
 ### Saga Execution
-- [ ] Implement outbox event claiming with SELECT FOR UPDATE SKIP LOCKED
-- [ ] Step 1: Create order via Orders Service
-- [ ] Step 2: Reserve inventory via Inventory Service
-- [ ] Step 3: Capture payment via Payments Service
-- [ ] Step 4: Confirm order via Orders Service
-- [ ] Update ledger status at each step
+- [x] Implement outbox event claiming with SELECT FOR UPDATE SKIP LOCKED
+- [x] Step 1: Create order via Orders Service
+- [x] Step 2: Reserve inventory via Inventory Service
+- [x] Step 3: Capture payment via Payments Service
+- [x] Step 4: Confirm order via Orders Service
+- [x] Update ledger status at each step
 
 ### Compensation Handling
-- [ ] Detect permanent failures and transition to COMPENSATING state
-- [ ] Execute compensations in reverse order based on last successful step
-- [ ] Void payment authorization via Payments Service
-- [ ] Release inventory reservation via Inventory Service
-- [ ] Cancel order via Orders Service
-- [ ] Mark ledger as FAILED after compensation complete
+- [x] Detect permanent failures and transition to COMPENSATING state
+- [x] Execute compensations in reverse order based on last successful step
+- [x] Void payment authorization via Payments Service
+- [x] Release inventory reservation via Inventory Service
+- [x] Cancel order via Orders Service
+- [x] Mark ledger as FAILED after compensation complete
 
 ### Retry Logic
 - [ ] Implement exponential backoff (1s, 4s, 16s, 64s) for transient failures

@@ -90,6 +90,40 @@ export class InvalidPayloadError extends Data.TaggedError("InvalidPayloadError")
 }> {}
 
 // ═══════════════════════════════════════════════════════════════════════════
+// Compensation Errors
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Payment void failed
+ */
+export class PaymentVoidError extends Data.TaggedError("PaymentVoidError")<{
+  readonly authorizationId: string
+  readonly reason: string
+  readonly statusCode?: number
+  readonly isRetryable: boolean
+}> {}
+
+/**
+ * Inventory release failed
+ */
+export class InventoryReleaseError extends Data.TaggedError("InventoryReleaseError")<{
+  readonly orderId: string
+  readonly reason: string
+  readonly statusCode?: number
+  readonly isRetryable: boolean
+}> {}
+
+/**
+ * Order cancellation failed
+ */
+export class OrderCancellationError extends Data.TaggedError("OrderCancellationError")<{
+  readonly orderId: string
+  readonly reason: string
+  readonly statusCode?: number
+  readonly isRetryable: boolean
+}> {}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // Aggregate Error Types for Pattern Matching
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -102,3 +136,12 @@ export type SagaStepError =
   | InventoryReservationError
   | PaymentCaptureError
   | OrderConfirmationError
+
+/**
+ * All saga compensation errors that can occur during rollback
+ */
+export type SagaCompensationError =
+  | ServiceConnectionError
+  | PaymentVoidError
+  | InventoryReleaseError
+  | OrderCancellationError

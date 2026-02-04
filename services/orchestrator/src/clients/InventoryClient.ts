@@ -1,5 +1,5 @@
 import { Context, Effect } from "effect"
-import type { InventoryReservationError, ServiceConnectionError } from "../domain/errors.js"
+import type { InventoryReservationError, InventoryReleaseError, ServiceConnectionError } from "../domain/errors.js"
 
 export interface ReserveStockParams {
   readonly orderId: string
@@ -16,6 +16,16 @@ export interface ReserveStockResult {
   readonly totalQuantityReserved: number
 }
 
+export interface ReleaseStockParams {
+  readonly orderId: string
+}
+
+export interface ReleaseStockResult {
+  readonly orderId: string
+  readonly releasedCount: number
+  readonly totalQuantityRestored: number
+}
+
 export class InventoryClient extends Context.Tag("InventoryClient")<
   InventoryClient,
   {
@@ -27,5 +37,13 @@ export class InventoryClient extends Context.Tag("InventoryClient")<
     readonly reserveStock: (
       params: ReserveStockParams
     ) => Effect.Effect<ReserveStockResult, InventoryReservationError | ServiceConnectionError>
+
+    /**
+     * Release stock reservations for an order (compensation).
+     * Idempotent: returns success if already released or no reservations exist.
+     */
+    readonly releaseStock: (
+      params: ReleaseStockParams
+    ) => Effect.Effect<ReleaseStockResult, InventoryReleaseError | ServiceConnectionError>
   }
 >() {}

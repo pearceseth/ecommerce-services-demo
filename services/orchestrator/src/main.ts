@@ -49,12 +49,13 @@ export const processEvents = Effect.gen(function* () {
               reason: error
             })
           ),
-          Match.tag("RequiresCompensation", ({ orderLedgerId }) =>
+          Match.tag("Compensated", ({ orderLedgerId, compensationSteps }) =>
             Effect.gen(function* () {
               yield* outboxRepo.markFailed(event.id)
-              yield* Effect.logWarning("Event requires compensation", {
+              yield* Effect.logInfo("Saga compensated and marked as failed", {
                 eventId: event.id,
-                orderLedgerId
+                orderLedgerId,
+                compensationSteps
               })
             })
           ),
