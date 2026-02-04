@@ -1,7 +1,7 @@
 import { Layer, Effect, Config, Duration, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "@effect/platform"
-import { InventoryClient, type ReserveStockParams, type ReserveStockResult } from "./InventoryClient.js"
-import { InventoryReservationError, ServiceConnectionError } from "../domain/errors.js"
+import { InventoryClient, type ReserveStockParams, type ReserveStockResult, type ReleaseStockParams, type ReleaseStockResult } from "./InventoryClient.js"
+import { InventoryReservationError, InventoryReleaseError, ServiceConnectionError } from "../domain/errors.js"
 
 const ReserveSuccessResponse = Schema.Struct({
   order_id: Schema.String,
@@ -16,6 +16,13 @@ const InsufficientStockResponse = Schema.Struct({
   product_sku: Schema.optional(Schema.String),
   requested: Schema.Number,
   available: Schema.Number
+})
+
+const ReleaseSuccessResponse = Schema.Struct({
+  order_id: Schema.String,
+  released_count: Schema.Number,
+  total_quantity_restored: Schema.Number,
+  message: Schema.String
 })
 
 export const InventoryClientLive = Layer.effect(
@@ -136,6 +143,81 @@ export const InventoryClientLive = Layer.effect(
           }
 
           return yield* Effect.fail(new InventoryReservationError({
+            orderId: params.orderId,
+            reason: `Client error: ${response.status}`,
+            statusCode: response.status,
+            isRetryable: false
+          }))
+        }),
+
+      releaseStock: (params: ReleaseStockParams) =>
+        Effect.gen(function* () {
+          yield* Effect.logDebug("Releasing stock via Inventory Service", {
+            orderId: params.orderId
+          })
+
+          const request = HttpClientRequest.del(`${baseUrl}/reservations/${params.orderId}`)
+
+          const response = yield* client.execute(request).pipe(
+            Effect.timeout(Duration.seconds(10)),
+            Effect.catchTag("TimeoutException", handleConnectionError("releaseStock")),
+            Effect.catchTag("RequestError", handleConnectionError("releaseStock")),
+            Effect.catchTag("ResponseError", handleConnectionError("releaseStock"))
+          )
+
+          if (response.status === 200) {
+            const rawBody = yield* response.json.pipe(
+              Effect.catchAll(() =>
+                Effect.fail(new InventoryReleaseError({
+                  orderId: params.orderId,
+                  reason: "Failed to parse response JSON",
+                  isRetryable: false
+                }))
+              )
+            )
+            const body = yield* Schema.decodeUnknown(ReleaseSuccessResponse)(rawBody).pipe(
+              Effect.mapError(() => new InventoryReleaseError({
+                orderId: params.orderId,
+                reason: "Invalid response format",
+                isRetryable: false
+              }))
+            )
+
+            yield* Effect.logInfo("Stock released successfully", {
+              orderId: params.orderId,
+              releasedCount: body.released_count,
+              totalQuantityRestored: body.total_quantity_restored
+            })
+
+            return {
+              orderId: body.order_id,
+              releasedCount: body.released_count,
+              totalQuantityRestored: body.total_quantity_restored
+            } satisfies ReleaseStockResult
+          }
+
+          // 404: No reservations found - treat as success (idempotent)
+          if (response.status === 404) {
+            yield* Effect.logInfo("No reservations found - treating as already released", {
+              orderId: params.orderId
+            })
+            return {
+              orderId: params.orderId,
+              releasedCount: 0,
+              totalQuantityRestored: 0
+            } satisfies ReleaseStockResult
+          }
+
+          if (response.status >= 500) {
+            return yield* Effect.fail(new InventoryReleaseError({
+              orderId: params.orderId,
+              reason: `Server error: ${response.status}`,
+              statusCode: response.status,
+              isRetryable: true
+            }))
+          }
+
+          return yield* Effect.fail(new InventoryReleaseError({
             orderId: params.orderId,
             reason: `Client error: ${response.status}`,
             statusCode: response.status,

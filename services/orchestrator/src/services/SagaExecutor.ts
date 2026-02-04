@@ -21,18 +21,18 @@ export interface SagaRequiresRetry {
   readonly error: string
 }
 
-export interface SagaRequiresCompensation {
-  readonly _tag: "RequiresCompensation"
+export interface SagaCompensated {
+  readonly _tag: "Compensated"
   readonly orderLedgerId: string
-  readonly finalStatus: string
-  readonly error: string
+  readonly finalStatus: "FAILED"
+  readonly compensationSteps: readonly string[]
 }
 
 export type SagaExecutionResult =
   | SagaCompleted
   | SagaFailed
   | SagaRequiresRetry
-  | SagaRequiresCompensation
+  | SagaCompensated
 
 export class SagaExecutor extends Context.Tag("SagaExecutor")<
   SagaExecutor,

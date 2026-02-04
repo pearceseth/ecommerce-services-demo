@@ -1,7 +1,7 @@
 import { Layer, Effect, Config, Duration, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "@effect/platform"
-import { OrdersClient, type CreateOrderParams, type CreateOrderResult, type ConfirmOrderResult } from "./OrdersClient.js"
-import { OrderCreationError, OrderConfirmationError, ServiceConnectionError } from "../domain/errors.js"
+import { OrdersClient, type CreateOrderParams, type CreateOrderResult, type ConfirmOrderResult, type CancelOrderResult } from "./OrdersClient.js"
+import { OrderCreationError, OrderConfirmationError, OrderCancellationError, ServiceConnectionError } from "../domain/errors.js"
 
 const CreateOrderSuccessResponse = Schema.Struct({
   id: Schema.String,
@@ -11,6 +11,16 @@ const CreateOrderSuccessResponse = Schema.Struct({
 const ConfirmOrderSuccessResponse = Schema.Struct({
   id: Schema.String,
   status: Schema.Literal("CONFIRMED")
+})
+
+const CancelOrderSuccessResponse = Schema.Struct({
+  id: Schema.String,
+  status: Schema.Literal("CANCELLED")
+})
+
+const ConflictResponse = Schema.Struct({
+  error: Schema.String,
+  current_status: Schema.String
 })
 
 const ErrorResponse = Schema.Struct({
@@ -175,6 +185,89 @@ export const OrdersClientLive = Layer.effect(
             reason: `Server error: ${response.status}`,
             statusCode: response.status,
             isRetryable: true
+          }))
+        }),
+
+      cancelOrder: (orderId: string) =>
+        Effect.gen(function* () {
+          yield* Effect.logDebug("Cancelling order via Orders Service", { orderId })
+
+          const request = HttpClientRequest.post(`${baseUrl}/orders/${orderId}/cancellation`)
+
+          const response = yield* client.execute(request).pipe(
+            Effect.timeout(Duration.seconds(10)),
+            Effect.catchTag("TimeoutException", handleConnectionError("cancelOrder")),
+            Effect.catchTag("RequestError", handleConnectionError("cancelOrder")),
+            Effect.catchTag("ResponseError", handleConnectionError("cancelOrder"))
+          )
+
+          if (response.status === 200) {
+            const rawBody = yield* response.json.pipe(
+              Effect.catchAll(() =>
+                Effect.fail(new OrderCancellationError({
+                  orderId,
+                  reason: "Failed to parse response JSON",
+                  isRetryable: false
+                }))
+              )
+            )
+            const body = yield* Schema.decodeUnknown(CancelOrderSuccessResponse)(rawBody).pipe(
+              Effect.mapError(() => new OrderCancellationError({
+                orderId,
+                reason: "Invalid response format",
+                isRetryable: false
+              }))
+            )
+
+            yield* Effect.logInfo("Order cancelled successfully", { orderId })
+
+            return {
+              orderId: body.id,
+              status: body.status
+            } satisfies CancelOrderResult
+          }
+
+          // 404: Order not found - this is an error during compensation
+          if (response.status === 404) {
+            return yield* Effect.fail(new OrderCancellationError({
+              orderId,
+              reason: "Order not found",
+              statusCode: 404,
+              isRetryable: false
+            }))
+          }
+
+          // 409: Invalid status transition - check if already cancelled (idempotent)
+          if (response.status === 409) {
+            const rawBody = yield* response.json.pipe(Effect.catchAll(() => Effect.succeed({})))
+            const decoded = Schema.decodeUnknownOption(ConflictResponse)(rawBody)
+            if (decoded._tag === "Some" && decoded.value.current_status === "CANCELLED") {
+              yield* Effect.logInfo("Order already cancelled (idempotent)", { orderId })
+              return { orderId, status: "CANCELLED" } satisfies CancelOrderResult
+            }
+
+            return yield* Effect.fail(new OrderCancellationError({
+              orderId,
+              reason: `Invalid status transition - current status: ${decoded._tag === "Some" ? decoded.value.current_status : "unknown"}`,
+              statusCode: 409,
+              isRetryable: false
+            }))
+          }
+
+          if (response.status >= 500) {
+            return yield* Effect.fail(new OrderCancellationError({
+              orderId,
+              reason: `Server error: ${response.status}`,
+              statusCode: response.status,
+              isRetryable: true
+            }))
+          }
+
+          return yield* Effect.fail(new OrderCancellationError({
+            orderId,
+            reason: `Client error: ${response.status}`,
+            statusCode: response.status,
+            isRetryable: false
           }))
         })
     }
