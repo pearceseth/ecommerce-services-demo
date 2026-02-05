@@ -94,6 +94,6 @@ _Saga execution engine - implement last as it depends on all other services_
 - [x] Mark ledger as FAILED after compensation complete
 
 ### Retry Logic
-- [ ] Implement exponential backoff (1s, 4s, 16s, 64s) for transient failures
-- [ ] Track retry_count and next_retry_at in ledger
-- [ ] Transition to COMPENSATING after max retries exceeded (5 attempts)
+- [x] Implement exponential backoff (1s, 4s, 16s, 64s) for transient failures
+- [x] Track retry_count and next_retry_at in ledger
+- [x] Transition to COMPENSATING after max retries exceeded (5 attempts)

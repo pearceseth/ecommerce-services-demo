@@ -2,13 +2,14 @@ import { HttpRouter, HttpServerRequest, HttpServerResponse } from "@effect/platf
 import type { HttpServerError } from "@effect/platform"
 import { SqlError } from "@effect/sql"
 import { Effect, ParseResult } from "effect"
+import { withTraceContext } from "@ecommerce/tracing"
 import { ReserveStockHttpRequest, OrderIdParams } from "../domain/Reservation.js"
 import { InventoryService } from "../services/InventoryService.js"
 import type { ProductNotFoundError, InsufficientStockError } from "../domain/errors.js"
 
 
 // POST /reservations - Reserve stock for an order
-const reserveStock = Effect.gen(function* () {
+const reserveStock = withTraceContext(Effect.gen(function* () {
   // Parse and validate request body
   const body = yield* HttpServerRequest.schemaBodyJson(ReserveStockHttpRequest)
 
@@ -40,7 +41,7 @@ const reserveStock = Effect.gen(function* () {
   }
 
   return HttpServerResponse.json(response, { status: 201 })
-}).pipe(
+})).pipe(
   Effect.withSpan("POST /reservations"),
   Effect.flatten,
   Effect.catchTags({
@@ -106,7 +107,7 @@ const reserveStock = Effect.gen(function* () {
 )
 
 // DELETE /reservations/:order_id - Release reservations for an order
-const releaseReservation = Effect.gen(function* () {
+const releaseReservation = withTraceContext(Effect.gen(function* () {
   // Extract and validate order_id from path parameters
   const { order_id: orderId } = yield* HttpRouter.schemaPathParams(OrderIdParams)
 
@@ -140,7 +141,7 @@ const releaseReservation = Effect.gen(function* () {
   }
 
   return HttpServerResponse.json(response, { status: 200 })
-}).pipe(
+})).pipe(
   Effect.withSpan("DELETE /reservations/:order_id"),
   Effect.flatten,
   Effect.catchTags({

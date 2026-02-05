@@ -1,6 +1,7 @@
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "@effect/platform"
 import type { HttpServerError } from "@effect/platform"
 import { Effect, type ParseResult } from "effect"
+import { withTraceContext } from "@ecommerce/tracing"
 import { PaymentGatewayService } from "../services/PaymentGatewayService.js"
 import { AuthorizePaymentRequest } from "../domain/Authorization.js"
 import { AuthorizationIdParams, CapturePaymentRequest } from "../domain/Capture.js"
@@ -14,7 +15,7 @@ import type {
 } from "../domain/errors.js"
 
 // POST /payments/authorize
-const authorizePayment = Effect.gen(function* () {
+const authorizePayment = withTraceContext(Effect.gen(function* () {
   // 1. Parse and validate request body
   const body = yield* HttpServerRequest.schemaBodyJson(AuthorizePaymentRequest)
 
@@ -26,7 +27,7 @@ const authorizePayment = Effect.gen(function* () {
 
   // 4. Return success response
   return HttpServerResponse.json(result, { status: 200 })
-}).pipe(
+})).pipe(
   Effect.withSpan("POST /payments/authorize"),
   Effect.flatten,
   Effect.catchTags({
@@ -66,7 +67,7 @@ const authorizePayment = Effect.gen(function* () {
 )
 
 // POST /payments/capture/:authorization_id
-const capturePayment = Effect.gen(function* () {
+const capturePayment = withTraceContext(Effect.gen(function* () {
   // 1. Parse path params
   const params = yield* HttpRouter.schemaPathParams(AuthorizationIdParams)
 
@@ -78,7 +79,7 @@ const capturePayment = Effect.gen(function* () {
   const result = yield* gateway.capture(params.authorization_id, body)
 
   return HttpServerResponse.json(result, { status: 200 })
-}).pipe(
+})).pipe(
   Effect.withSpan("POST /payments/capture/:authorization_id"),
   Effect.flatten,
   Effect.catchTags({
@@ -123,7 +124,7 @@ const capturePayment = Effect.gen(function* () {
 )
 
 // POST /payments/void/:authorization_id
-const voidPayment = Effect.gen(function* () {
+const voidPayment = withTraceContext(Effect.gen(function* () {
   // 1. Parse path params
   const params = yield* HttpRouter.schemaPathParams(AuthorizationIdParams)
 
@@ -135,7 +136,7 @@ const voidPayment = Effect.gen(function* () {
   const result = yield* gateway.voidAuthorization(params.authorization_id, body)
 
   return HttpServerResponse.json(result, { status: 200 })
-}).pipe(
+})).pipe(
   Effect.withSpan("POST /payments/void/:authorization_id"),
   Effect.flatten,
   Effect.catchTags({

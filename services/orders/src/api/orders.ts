@@ -1,5 +1,6 @@
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "@effect/platform"
 import { Effect } from "effect"
+import { withTraceContext } from "@ecommerce/tracing"
 import { OrderService } from "../services/OrderService.js"
 import { CreateOrderRequest, OrderIdParams } from "../domain/Order.js"
 import type { Order, OrderItem } from "../domain/Order.js"
@@ -24,14 +25,15 @@ const toOrderResponse = (order: Order, items: readonly OrderItem[]) => ({
 })
 
 // POST /orders - Create order from ledger entry
-const createOrder = Effect.gen(function* () {
+const createOrder = withTraceContext(Effect.gen(function* () {
   const service = yield* OrderService
   const request = yield* HttpServerRequest.schemaBodyJson(CreateOrderRequest)
 
   const { order, items } = yield* service.create(request)
 
   return yield* HttpServerResponse.json(toOrderResponse(order, items), { status: 201 })
-}).pipe(
+})).pipe(
+  Effect.withSpan("POST /orders"),
   Effect.catchTags({
     ParseError: (error) =>
       HttpServerResponse.json(
@@ -56,14 +58,15 @@ const createOrder = Effect.gen(function* () {
 )
 
 // GET /orders/:order_id - Get order by ID
-const getOrderById = Effect.gen(function* () {
+const getOrderById = withTraceContext(Effect.gen(function* () {
   const service = yield* OrderService
   const { order_id: orderId } = yield* HttpRouter.schemaPathParams(OrderIdParams)
 
   const { order, items } = yield* service.findById(orderId)
 
   return yield* HttpServerResponse.json(toOrderResponse(order, items))
-}).pipe(
+})).pipe(
+  Effect.withSpan("GET /orders/:order_id"),
   Effect.catchTags({
     ParseError: () =>
       HttpServerResponse.json(
@@ -84,14 +87,15 @@ const getOrderById = Effect.gen(function* () {
 )
 
 // POST /orders/:order_id/cancellation - Cancel order (compensation)
-const cancelOrder = Effect.gen(function* () {
+const cancelOrder = withTraceContext(Effect.gen(function* () {
   const service = yield* OrderService
   const { order_id: orderId } = yield* HttpRouter.schemaPathParams(OrderIdParams)
 
   const { order, items } = yield* service.cancel(orderId)
 
   return yield* HttpServerResponse.json(toOrderResponse(order, items))
-}).pipe(
+})).pipe(
+  Effect.withSpan("POST /orders/:order_id/cancellation"),
   Effect.catchTags({
     ParseError: () =>
       HttpServerResponse.json(
@@ -122,14 +126,15 @@ const cancelOrder = Effect.gen(function* () {
 )
 
 // POST /orders/:order_id/confirmation - Confirm order (final saga step)
-const confirmOrder = Effect.gen(function* () {
+const confirmOrder = withTraceContext(Effect.gen(function* () {
   const service = yield* OrderService
   const { order_id: orderId } = yield* HttpRouter.schemaPathParams(OrderIdParams)
 
   const { order, items } = yield* service.confirm(orderId)
 
   return yield* HttpServerResponse.json(toOrderResponse(order, items))
-}).pipe(
+})).pipe(
+  Effect.withSpan("POST /orders/:order_id/confirmation"),
   Effect.catchTags({
     ParseError: () =>
       HttpServerResponse.json(
