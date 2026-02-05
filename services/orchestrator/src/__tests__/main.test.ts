@@ -12,12 +12,18 @@ const createTestConfig = (overrides: Partial<{
   ordersServiceUrl: string
   inventoryServiceUrl: string
   paymentsServiceUrl: string
+  maxRetryAttempts: number
+  retryBaseDelayMs: number
+  retryBackoffMultiplier: number
 }> = {}) =>
   Layer.succeed(OrchestratorConfig, {
     pollIntervalMs: overrides.pollIntervalMs ?? 1000,
     ordersServiceUrl: overrides.ordersServiceUrl ?? "http://localhost:3003",
     inventoryServiceUrl: overrides.inventoryServiceUrl ?? "http://localhost:3001",
-    paymentsServiceUrl: overrides.paymentsServiceUrl ?? "http://localhost:3002"
+    paymentsServiceUrl: overrides.paymentsServiceUrl ?? "http://localhost:3002",
+    maxRetryAttempts: overrides.maxRetryAttempts ?? 5,
+    retryBaseDelayMs: overrides.retryBaseDelayMs ?? 1000,
+    retryBackoffMultiplier: overrides.retryBackoffMultiplier ?? 4
   })
 
 // Mock SqlClient that supports withTransaction
@@ -30,7 +36,8 @@ const createMockOutboxRepo = (events: OutboxEvent[] = []) =>
   Layer.succeed(OutboxRepository, {
     claimPendingEvents: () => Effect.succeed({ events } satisfies ClaimResult),
     markProcessed: () => Effect.void,
-    markFailed: () => Effect.void
+    markFailed: () => Effect.void,
+    scheduleRetry: () => Effect.succeed({ retryCount: 1 })
   })
 
 const createMockSagaExecutor = (result: SagaExecutionResult = { _tag: "Completed", orderLedgerId: "test", finalStatus: "COMPLETED" }) =>
@@ -73,7 +80,9 @@ describe("processEvents", () => {
       },
       status: "PENDING",
       createdAt: now,
-      processedAt: null
+      processedAt: null,
+      retryCount: 0,
+      nextRetryAt: null
     })
 
     let processedEventIds: string[] = []
@@ -85,7 +94,8 @@ describe("processEvents", () => {
           processedEventIds.push(eventId)
           return Effect.void
         },
-        markFailed: () => Effect.void
+        markFailed: () => Effect.void,
+        scheduleRetry: () => Effect.succeed({ retryCount: 1 })
       }),
       createMockSagaExecutor()
     )

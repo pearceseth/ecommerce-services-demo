@@ -20,8 +20,6 @@ interface LedgerRow {
   currency: string
   payment_authorization_id: string | null
   order_id: string | null
-  retry_count: number
-  next_retry_at: Date | null
   created_at: Date
   updated_at: Date
 }
@@ -45,8 +43,6 @@ const rowToLedger = (row: LedgerRow): OrderLedger =>
     currency: row.currency,
     paymentAuthorizationId: row.payment_authorization_id,
     orderId: row.order_id,
-    retryCount: row.retry_count,
-    nextRetryAt: row.next_retry_at ? DateTime.unsafeFromDate(row.next_retry_at) : null,
     createdAt: DateTime.unsafeFromDate(row.created_at),
     updatedAt: DateTime.unsafeFromDate(row.updated_at)
   })
@@ -63,7 +59,7 @@ export const LedgerRepositoryLive = Layer.effect(
             SELECT
               ol.id, ol.client_request_id, ol.user_id, ol.email, ol.status,
               ol.total_amount_cents, ol.currency, ol.payment_authorization_id,
-              ol.order_id, ol.retry_count, ol.next_retry_at, ol.created_at, ol.updated_at,
+              ol.order_id, ol.created_at, ol.updated_at,
               oli.id as item_id, oli.product_id, oli.quantity, oli.unit_price_cents,
               oli.created_at as item_created_at
             FROM order_ledger ol

@@ -1,4 +1,4 @@
-import { Context, Effect } from "effect"
+import { Context, Effect, DateTime } from "effect"
 import type { OutboxEvent } from "../domain/OutboxEvent.js"
 
 export interface SagaCompleted {
@@ -19,6 +19,10 @@ export interface SagaRequiresRetry {
   readonly orderLedgerId: string
   readonly finalStatus: string
   readonly error: string
+  // Retry tracking info
+  readonly retryCount: number
+  readonly nextRetryAt: DateTime.Utc
+  readonly isLastAttempt: boolean
 }
 
 export interface SagaCompensated {

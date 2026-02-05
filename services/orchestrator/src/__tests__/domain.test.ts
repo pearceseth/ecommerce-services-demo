@@ -77,7 +77,9 @@ describe("OutboxEvent", () => {
         payload: { order_ledger_id: "ledger-456" },
         status: "PENDING",
         createdAt: now,
-        processedAt: null
+        processedAt: null,
+        retryCount: 0,
+        nextRetryAt: null
       })
 
       expect(event.id).toBe("event-123")
@@ -85,6 +87,8 @@ describe("OutboxEvent", () => {
       expect(event.eventType).toBe("OrderAuthorized")
       expect(event.status).toBe("PENDING")
       expect(event.processedAt).toBeNull()
+      expect(event.retryCount).toBe(0)
+      expect(event.nextRetryAt).toBeNull()
     })
   })
 })
@@ -129,8 +133,6 @@ describe("OrderLedger", () => {
         currency: "USD",
         paymentAuthorizationId: "auth-123",
         orderId: null,
-        retryCount: 0,
-        nextRetryAt: null,
         createdAt: now,
         updatedAt: now
       })

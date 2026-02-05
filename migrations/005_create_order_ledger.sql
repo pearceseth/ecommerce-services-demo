@@ -9,18 +9,13 @@ CREATE TABLE IF NOT EXISTS order_ledger (
     total_amount_cents INT NOT NULL,
     currency VARCHAR(3) NOT NULL DEFAULT 'USD',
     payment_authorization_id VARCHAR(255),
-    retry_count INT NOT NULL DEFAULT 0,
-    next_retry_at TIMESTAMP WITH TIME ZONE,
+    order_id VARCHAR(255),
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
 
 -- Index for orchestrator queries by status
 CREATE INDEX IF NOT EXISTS idx_order_ledger_status ON order_ledger(status);
-
--- Index for retry scheduling
-CREATE INDEX IF NOT EXISTS idx_order_ledger_next_retry ON order_ledger(next_retry_at)
-    WHERE status IN ('AUTHORIZED', 'COMPENSATING');
 
 -- Trigger to auto-update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_order_ledger_updated_at()

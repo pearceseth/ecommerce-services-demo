@@ -33,8 +33,7 @@ export class OrderLedger extends Schema.Class<OrderLedger>("OrderLedger")({
   currency: Schema.String,
   paymentAuthorizationId: Schema.NullOr(Schema.String),
   orderId: Schema.NullOr(Schema.String),
-  retryCount: Schema.Number,
-  nextRetryAt: Schema.NullOr(Schema.DateTimeUtc),
+  // Retry tracking fields moved to outbox table (see OutboxEvent.ts)
   createdAt: Schema.DateTimeUtc,
   updatedAt: Schema.DateTimeUtc
 }) {}

@@ -464,3 +464,140 @@ yield* new ProductNotFoundError({ productId: "abc-123", searchedBy: "id" })
 - Don't forget to handle all Effect error channels in route handlers
 - Don't use `null` for optional values - use `Option<T>`
 - Don't mutate data - create new instances with changes
+
+---
+
+## Retry and Backoff Patterns
+
+### Pure Functions for Retry Logic
+Implement retry delay calculations as pure functions in a separate module. This enables:
+- Easy unit testing without mocking time
+- Reusability across different retry scenarios
+- Clear separation between policy definition and policy application
+
+```typescript
+// Good: Pure function for retry calculations
+export const calculateRetryDelay = (
+  attemptNumber: number,
+  policy: RetryPolicy
+): Duration.Duration => {
+  const exponent = Math.max(0, attemptNumber - 2)
+  const delayMs = policy.baseDelayMs * Math.pow(policy.backoffMultiplier, exponent)
+  return Duration.millis(delayMs)
+}
+```
+
+### Exponential Backoff Formula
+For transient failures, use exponential backoff: `delay = baseDelay * multiplier^(attempt - 2)`
+
+| Attempt | Calculation | Delay |
+|---------|-------------|-------|
+| 1 | Immediate | 0s |
+| 2 | 1000 * 4^0 | 1s |
+| 3 | 1000 * 4^1 | 4s |
+| 4 | 1000 * 4^2 | 16s |
+| 5 | 1000 * 4^3 | 64s |
+
+### Retry State Tracking
+Store retry state in the database, not in memory:
+- `retry_count` - number of failed attempts
+- `next_retry_at` - timestamp when retry should occur
+
+This enables:
+- Crash recovery without losing retry state
+- Horizontal scaling (any instance can pick up retries)
+- Audit trail of failure history
+
+### Concurrent Retry Processing with SKIP LOCKED
+When multiple orchestrator instances poll for retries:
+
+```sql
+SELECT * FROM order_ledger
+WHERE status = ANY('{AUTHORIZED,ORDER_CREATED,...}')
+  AND (next_retry_at IS NULL OR next_retry_at <= NOW())
+ORDER BY next_retry_at NULLS FIRST, created_at ASC
+LIMIT 10
+FOR UPDATE SKIP LOCKED
+```
+
+Key patterns:
+- `NULLS FIRST` prioritizes first-attempt entries over retries
+- `FOR UPDATE SKIP LOCKED` prevents double-processing
+- Filter on valid retryable statuses only
+
+### Distinguish Retryable vs Permanent Errors
+Every error type should include an `isRetryable` flag:
+
+```typescript
+class PaymentCaptureError extends Data.TaggedError("PaymentCaptureError")<{
+  readonly authorizationId: string
+  readonly reason: string
+  readonly statusCode?: number
+  readonly isRetryable: boolean  // Critical for retry decisions
+}> {}
+```
+
+Classification guide:
+- **Retryable**: Network timeouts, 5xx errors, connection failures
+- **Permanent**: 4xx errors (except 429), validation failures, business rule violations
+
+### Max Retries and Graceful Degradation
+Always define a maximum retry limit to prevent infinite loops:
+
+```typescript
+if (isMaxRetriesExceeded(currentRetryCount, maxAttempts)) {
+  // Transition to compensation, not another retry
+  yield* compensationExecutor.executeCompensation(context)
+}
+```
+
+---
+
+## Separation of Concerns: Business Records vs Work Queues
+
+### Keep Business Records Immutable (or Nearly So)
+
+Business records (ledgers, orders, audit logs) should primarily be append-only or have minimal, well-defined status transitions. Avoid mixing operational/processing metadata into business tables.
+
+**Business Record (Ledger):**
+- Order lifecycle status (AUTHORIZED → ORDER_CREATED → COMPLETED)
+- Business identifiers (user_id, payment_authorization_id)
+- Monetary values, timestamps
+
+**Work Queue (Outbox):**
+- Processing status (PENDING → PROCESSED/FAILED)
+- Retry count and next retry time
+- Operational metadata for coordination
+
+### Why This Matters
+
+1. **Audit Trail Integrity**: Business records tell the story of "what happened." Mixing retry metadata dilutes this with "how we processed it."
+
+2. **Horizontal Scaling**: Work queues need frequent updates (retry_count++). Separating this from business data reduces contention.
+
+3. **Archival**: Old outbox events can be archived/deleted independently. Business records may have legal retention requirements.
+
+4. **Debugging**: Clear separation makes it easier to answer:
+   - "What state is this order in?" → Look at ledger
+   - "Why hasn't this processed yet?" → Look at outbox
+
+### Pattern: Outbox as Work Queue
+
+```
+┌─────────────────────────────────────────────┐
+│              OUTBOX (Work Queue)            │
+│  - Retry tracking (retry_count, next_retry) │
+│  - Processing status (PENDING/PROCESSED)    │
+│  - Coordination metadata                    │
+└─────────────────────────────────────────────┘
+                    │
+                    ▼ references
+┌─────────────────────────────────────────────┐
+│           LEDGER (Business Record)          │
+│  - Business state (AUTHORIZED, COMPLETED)   │
+│  - Customer/order identifiers               │
+│  - Monetary values                          │
+└─────────────────────────────────────────────┘
+```
+
+The outbox event points to the ledger entry. Retry logic updates the outbox. Business state transitions update the ledger.

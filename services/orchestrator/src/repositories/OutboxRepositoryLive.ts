@@ -12,6 +12,8 @@ interface OutboxRow {
   status: string
   created_at: Date
   processed_at: Date | null
+  retry_count: number
+  next_retry_at: Date | null
 }
 
 const rowToOutboxEvent = (row: OutboxRow): OutboxEvent =>
@@ -23,7 +25,9 @@ const rowToOutboxEvent = (row: OutboxRow): OutboxEvent =>
     payload: row.payload,
     status: row.status as OutboxEventStatus,
     createdAt: DateTime.unsafeFromDate(row.created_at),
-    processedAt: row.processed_at ? DateTime.unsafeFromDate(row.processed_at) : null
+    processedAt: row.processed_at ? DateTime.unsafeFromDate(row.processed_at) : null,
+    retryCount: row.retry_count,
+    nextRetryAt: row.next_retry_at ? DateTime.unsafeFromDate(row.next_retry_at) : null
   })
 
 export const OutboxRepositoryLive = Layer.effect(
@@ -35,10 +39,16 @@ export const OutboxRepositoryLive = Layer.effect(
       claimPendingEvents: (limit = 10) =>
         Effect.gen(function* () {
           const rows = yield* sql<OutboxRow>`
-            SELECT id, aggregate_type, aggregate_id, event_type, payload, status, created_at, processed_at
+            SELECT
+              id, aggregate_type, aggregate_id, event_type,
+              payload, status, created_at, processed_at,
+              retry_count, next_retry_at
             FROM outbox
             WHERE status = 'PENDING'
-            ORDER BY created_at ASC
+              AND (next_retry_at IS NULL OR next_retry_at <= NOW())
+            ORDER BY
+              next_retry_at NULLS FIRST,
+              created_at ASC
             LIMIT ${limit}
             FOR UPDATE SKIP LOCKED
           `
@@ -67,6 +77,30 @@ export const OutboxRepositoryLive = Layer.effect(
             WHERE id = ${eventId}
           `
           yield* Effect.logDebug("Marked outbox event as failed", { eventId })
+        }).pipe(Effect.orDie),
+
+      scheduleRetry: (eventId: OutboxEventId, nextRetryAt: DateTime.Utc) =>
+        Effect.gen(function* () {
+          const nextRetryDate = DateTime.toDate(nextRetryAt)
+
+          const rows = yield* sql<{ retry_count: number }>`
+            UPDATE outbox
+            SET
+              retry_count = retry_count + 1,
+              next_retry_at = ${nextRetryDate}
+            WHERE id = ${eventId}
+            RETURNING retry_count
+          `
+
+          const newRetryCount = rows[0].retry_count
+
+          yield* Effect.logDebug("Scheduled outbox event for retry", {
+            eventId,
+            retryCount: newRetryCount,
+            nextRetryAt: nextRetryDate.toISOString()
+          })
+
+          return { retryCount: newRetryCount }
         }).pipe(Effect.orDie)
     }
   })
