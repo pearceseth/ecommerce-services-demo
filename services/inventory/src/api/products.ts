@@ -2,13 +2,14 @@ import { HttpRouter, HttpServerRequest, HttpServerResponse } from "@effect/platf
 import type { HttpServerError } from "@effect/platform"
 import { SqlError } from "@effect/sql"
 import { Effect, DateTime, ParseResult } from "effect"
+import { withTraceContext } from "@ecommerce/tracing"
 import { CreateProductRequest, ProductIdParams } from "../domain/Product.js"
 import { AddStockRequest } from "../domain/Adjustment.js"
 import { ProductService } from "../services/ProductService.js"
 import { InventoryService } from "../services/InventoryService.js"
 import type { DuplicateSkuError, ProductNotFoundError, DuplicateAdjustmentError } from "../domain/errors.js"
 
-const createProduct = Effect.gen(function* () {
+const createProduct = withTraceContext(Effect.gen(function* () {
   // Parse and validate request body
   const body = yield* HttpServerRequest.schemaBodyJson(CreateProductRequest)
 
@@ -29,7 +30,7 @@ const createProduct = Effect.gen(function* () {
   }
 
   return HttpServerResponse.json(response, { status: 201 })
-}).pipe(
+})).pipe(
   Effect.withSpan("POST /products"),
   Effect.flatten,
   // Error handling - map domain errors to HTTP responses
@@ -82,7 +83,7 @@ const createProduct = Effect.gen(function* () {
 )
 
 // GET /products/:product_id/availability - Get product availability
-const getAvailability = Effect.gen(function* () {
+const getAvailability = withTraceContext(Effect.gen(function* () {
   // Extract and validate product_id from path parameters using schema
   const { product_id: productId } = yield* HttpRouter.schemaPathParams(ProductIdParams)
 
@@ -109,7 +110,7 @@ const getAvailability = Effect.gen(function* () {
   }
 
   return HttpServerResponse.json(response, { status: 200 })
-}).pipe(
+})).pipe(
   Effect.withSpan("GET /products/:product_id/availability"),
   Effect.flatten,
   Effect.catchTags({
@@ -149,7 +150,7 @@ const getAvailability = Effect.gen(function* () {
 )
 
 // POST /products/:product_id/stock - Add stock to a product
-const addStock = Effect.gen(function* () {
+const addStock = withTraceContext(Effect.gen(function* () {
   // Extract and validate product_id from path parameters using schema
   const { product_id: productId } = yield* HttpRouter.schemaPathParams(ProductIdParams)
 
@@ -192,7 +193,7 @@ const addStock = Effect.gen(function* () {
   }
 
   return HttpServerResponse.json(response, { status: 200 })
-}).pipe(
+})).pipe(
   Effect.withSpan("POST /products/:product_id/stock"),
   Effect.flatten,
   Effect.catchTags({

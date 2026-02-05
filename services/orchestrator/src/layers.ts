@@ -1,5 +1,5 @@
 import { Layer } from "effect"
-import { NodeHttpClient } from "@effect/platform-node"
+import { TracedHttpClientLive } from "@ecommerce/tracing"
 import { DatabaseLive } from "./db.js"
 import { OrchestratorConfigLive } from "./config.js"
 import { OutboxRepositoryLive } from "./repositories/OutboxRepositoryLive.js"
@@ -10,8 +10,8 @@ import { PaymentsClientLive } from "./clients/PaymentsClientLive.js"
 import { SagaExecutorLive } from "./services/SagaExecutorLive.js"
 import { CompensationExecutorLive } from "./services/CompensationExecutorLive.js"
 
-// HTTP client layer for all service clients
-const HttpClientLive = NodeHttpClient.layer
+// HTTP client layer for all service clients (with trace context propagation)
+const HttpClientLive = TracedHttpClientLive
 
 // Repository layers (depend on Database)
 const RepositoriesLive = Layer.mergeAll(

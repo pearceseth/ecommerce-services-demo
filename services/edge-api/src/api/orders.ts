@@ -2,6 +2,7 @@ import { HttpRouter, HttpServerRequest, HttpServerResponse } from "@effect/platf
 import type { HttpServerError } from "@effect/platform"
 import { SqlError } from "@effect/sql"
 import { Effect, type ParseResult } from "effect"
+import { withTraceContext } from "@ecommerce/tracing"
 import { CreateOrderRequest, OrderLedgerIdParams } from "../domain/OrderLedger.js"
 import { OrderService } from "../services/OrderService.js"
 import {
@@ -13,7 +14,7 @@ import {
 } from "../domain/errors.js"
 
 // POST /orders - Create a new order
-export const createOrder = Effect.gen(function* () {
+export const createOrder = withTraceContext(Effect.gen(function* () {
   // 1. Extract Idempotency-Key header
   const request = yield* HttpServerRequest.HttpServerRequest
   const idempotencyKey = request.headers["idempotency-key"]
@@ -43,7 +44,7 @@ export const createOrder = Effect.gen(function* () {
     },
     { status: 202 }
   )
-}).pipe(
+})).pipe(
   Effect.withSpan("POST /orders"),
   Effect.flatten,
   Effect.catchTags({
@@ -131,7 +132,7 @@ export const createOrder = Effect.gen(function* () {
 )
 
 // GET /orders/:order_ledger_id - Get order status and details
-export const getOrderStatus = Effect.gen(function* () {
+export const getOrderStatus = withTraceContext(Effect.gen(function* () {
   // 1. Parse and validate path parameter
   const { order_ledger_id: orderLedgerId } = yield* HttpRouter.schemaPathParams(OrderLedgerIdParams)
 
@@ -162,7 +163,7 @@ export const getOrderStatus = Effect.gen(function* () {
       unit_price_cents: item.unitPriceCents
     }))
   })
-}).pipe(
+})).pipe(
   Effect.withSpan("GET /orders/:order_ledger_id"),
   Effect.flatten,
   Effect.catchTags({

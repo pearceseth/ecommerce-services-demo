@@ -1,13 +1,13 @@
 import { Layer } from "effect"
-import { NodeHttpClient } from "@effect/platform-node"
+import { TracedHttpClientLive } from "@ecommerce/tracing"
 import { DatabaseLive } from "./db.js"
 import { EdgeApiConfigLive } from "./config.js"
 import { OrderLedgerRepositoryLive } from "./repositories/OrderLedgerRepositoryLive.js"
 import { OrderServiceLive } from "./services/OrderServiceLive.js"
 import { PaymentClientLive } from "./services/PaymentClientLive.js"
 
-// HTTP client layer for making external requests
-const HttpClientLive = NodeHttpClient.layer
+// HTTP client layer for making external requests (with trace context propagation)
+const HttpClientLive = TracedHttpClientLive
 
 // Repository layer depends on database
 const RepositoryLive = OrderLedgerRepositoryLive.pipe(
