@@ -97,3 +97,8 @@ _Saga execution engine - implement last as it depends on all other services_
 - [x] Implement exponential backoff (1s, 4s, 16s, 64s) for transient failures
 - [x] Track retry_count and next_retry_at in ledger
 - [x] Transition to COMPENSATING after max retries exceeded (5 attempts)
+
+### Resiliency and Best Practices
+- [ ] The build process is slow, review docker files for best practices and speed up builds if possible.
+- [ ] Add Swagger UI for API endpoints
+- [ ] Check repository implementations  - can "string | null" be Option?

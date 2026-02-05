@@ -1,30 +1,48 @@
 FROM node:22-alpine AS base
 
-FROM base AS deps
-WORKDIR /app
-COPY package.json ./
-RUN npm install
-
 FROM base AS builder
 WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
-COPY . .
-RUN npm run build
 
-# Shared runner base
+# Copy root workspace files
+COPY package.json package-lock.json ./
+
+# Copy tracing package
+COPY packages/tracing ./packages/tracing
+
+# Copy this service
+COPY services/payment ./services/payment
+
+# Install all dependencies
+RUN npm install
+
+# Build tracing first, then service
+RUN npm run build --workspace=@ecommerce/tracing
+RUN npm run build --workspace=@ecommerce/payment
+
+# Runner stage
 FROM base AS runner-base
 WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
-COPY --from=builder /app/dist ./dist
-COPY package.json ./
+
+# Copy node_modules from builder
+COPY --from=builder /app/node_modules ./node_modules
+
+# Copy built tracing package
+COPY --from=builder /app/packages/tracing/dist ./packages/tracing/dist
+COPY --from=builder /app/packages/tracing/package.json ./packages/tracing/
+
+# Copy built service
+COPY --from=builder /app/services/payment/dist ./services/payment/dist
+COPY --from=builder /app/services/payment/package.json ./services/payment/
+
+WORKDIR /app/services/payment
 EXPOSE 3002
 
-# Development: runs as root
+# Development
 FROM runner-base AS runner-dev
 ENV NODE_ENV=development
 CMD ["node", "dist/index.js"]
 
-# Production: runs as non-root user
+# Production
 FROM runner-base AS runner-prod
 ENV NODE_ENV=production
 RUN addgroup --system --gid 1001 appgroup && \

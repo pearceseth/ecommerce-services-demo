@@ -18,8 +18,6 @@ interface OrderLedgerRow {
   total_amount_cents: number
   currency: string
   payment_authorization_id: string | null
-  retry_count: number
-  next_retry_at: string | null
   created_at: string
   updated_at: string
 }
@@ -45,8 +43,6 @@ interface OrderLedgerWithItemsRow {
   total_amount_cents: number
   currency: string
   payment_authorization_id: string | null
-  retry_count: number
-  next_retry_at: string | null
   created_at: string
   updated_at: string
   // Item fields (nullable due to LEFT JOIN)
@@ -68,8 +64,6 @@ const rowToOrderLedger = (row: OrderLedgerRow): OrderLedger =>
     totalAmountCents: row.total_amount_cents,
     currency: row.currency,
     paymentAuthorizationId: row.payment_authorization_id,
-    retryCount: row.retry_count,
-    nextRetryAt: row.next_retry_at ? DateTime.unsafeFromDate(new Date(row.next_retry_at)) : null,
     createdAt: DateTime.unsafeFromDate(new Date(row.created_at)),
     updatedAt: DateTime.unsafeFromDate(new Date(row.updated_at))
   })
@@ -96,7 +90,7 @@ export const OrderLedgerRepositoryLive = Layer.effect(
           const rows = yield* sql<OrderLedgerRow>`
             SELECT id, client_request_id, user_id, email, status,
                    total_amount_cents, currency, payment_authorization_id,
-                   retry_count, next_retry_at, created_at, updated_at
+                   created_at, updated_at
             FROM order_ledger
             WHERE client_request_id = ${clientRequestId}
           `
@@ -115,7 +109,7 @@ export const OrderLedgerRepositoryLive = Layer.effect(
             VALUES (${params.clientRequestId}, ${params.userId}, ${params.email}, ${params.totalAmountCents}, ${params.currency})
             RETURNING id, client_request_id, user_id, email, status,
                       total_amount_cents, currency, payment_authorization_id,
-                      retry_count, next_retry_at, created_at, updated_at
+                      created_at, updated_at
           `
 
           return rowToOrderLedger(rows[0])
@@ -148,7 +142,7 @@ export const OrderLedgerRepositoryLive = Layer.effect(
                 WHERE id = ${params.orderLedgerId}
                 RETURNING id, client_request_id, user_id, email, status,
                           total_amount_cents, currency, payment_authorization_id,
-                          retry_count, next_retry_at, created_at, updated_at
+                          created_at, updated_at
               `
 
               const ledgerRow = ledgerRows[0]
@@ -184,7 +178,7 @@ export const OrderLedgerRepositoryLive = Layer.effect(
             WHERE id = ${orderLedgerId}
             RETURNING id, client_request_id, user_id, email, status,
                       total_amount_cents, currency, payment_authorization_id,
-                      retry_count, next_retry_at, created_at, updated_at
+                      created_at, updated_at
           `
 
           return rowToOrderLedger(rows[0])
@@ -197,7 +191,7 @@ export const OrderLedgerRepositoryLive = Layer.effect(
             SELECT
               ol.id, ol.client_request_id, ol.user_id, ol.email, ol.status,
               ol.total_amount_cents, ol.currency, ol.payment_authorization_id,
-              ol.retry_count, ol.next_retry_at, ol.created_at, ol.updated_at,
+              ol.created_at, ol.updated_at,
               oli.id as item_id, oli.product_id, oli.quantity, oli.unit_price_cents,
               oli.created_at as item_created_at
             FROM order_ledger ol
