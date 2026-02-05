@@ -107,5 +107,34 @@ services:
       observability:
         condition: service_started
 
+  orchestrator:
+    build:
+      context: ./services/orchestrator
+      dockerfile: Dockerfile
+      target: runner-dev
+    environment:
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_NAME: ecommerce
+      DATABASE_USER: ecommerce
+      DATABASE_PASSWORD: ecommerce
+      ORDERS_SERVICE_URL: http://order:3003
+      INVENTORY_SERVICE_URL: http://inventory:3001
+      PAYMENTS_SERVICE_URL: http://payment:3002
+      POLL_INTERVAL_MS: 5000
+      OTEL_SERVICE_NAME: orchestrator-service
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://observability:4318
+    depends_on:
+      postgres:
+        condition: service_healthy
+      observability:
+        condition: service_started
+      order:
+        condition: service_started
+      inventory:
+        condition: service_started
+      payment:
+        condition: service_started
+
 volumes:
   postgres_data:
