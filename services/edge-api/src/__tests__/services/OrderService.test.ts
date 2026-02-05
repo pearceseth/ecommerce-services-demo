@@ -49,8 +49,6 @@ const createMockOrderLedger = (overrides?: Partial<{
     totalAmountCents: 2000,
     currency: "USD",
     paymentAuthorizationId: overrides?.paymentAuthorizationId ?? null,
-    retryCount: 0,
-    nextRetryAt: null,
     createdAt: now,
     updatedAt: now
   })

@@ -28,8 +28,8 @@ services:
 
   edge-api:
     build:
-      context: ./services/edge-api
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: services/edge-api/Dockerfile
       target: runner-dev
     ports:
       - "3000:3000"
@@ -40,6 +40,7 @@ services:
       DATABASE_NAME: ecommerce
       DATABASE_USER: ecommerce
       DATABASE_PASSWORD: ecommerce
+      PAYMENT_SERVICE_URL: http://payment:3002
       OTEL_SERVICE_NAME: edge-api
       OTEL_EXPORTER_OTLP_ENDPOINT: http://observability:4318
     depends_on:
@@ -47,11 +48,13 @@ services:
         condition: service_healthy
       observability:
         condition: service_started
+      payment:
+        condition: service_started
 
   inventory:
     build:
-      context: ./services/inventory
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: services/inventory/Dockerfile
       target: runner-dev
     ports:
       - "3001:3001"
@@ -72,8 +75,8 @@ services:
 
   payment:
     build:
-      context: ./services/payment
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: services/payment/Dockerfile
       target: runner-dev
     ports:
       - "3002:3002"
@@ -87,8 +90,8 @@ services:
 
   order:
     build:
-      context: ./services/orders
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: services/orders/Dockerfile
       target: runner-dev
     ports:
       - "3003:3003"
@@ -109,8 +112,8 @@ services:
 
   orchestrator:
     build:
-      context: ./services/orchestrator
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: services/orchestrator/Dockerfile
       target: runner-dev
     environment:
       DATABASE_HOST: postgres

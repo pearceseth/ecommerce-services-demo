@@ -75,8 +75,6 @@ export class OrderLedger extends Schema.Class<OrderLedger>("OrderLedger")({
   totalAmountCents: Schema.Int,
   currency: Schema.String,
   paymentAuthorizationId: Schema.NullOr(Schema.String),
-  retryCount: Schema.Int,
-  nextRetryAt: Schema.NullOr(Schema.DateTimeUtc),
   createdAt: Schema.DateTimeUtc,
   updatedAt: Schema.DateTimeUtc
 }) {}
