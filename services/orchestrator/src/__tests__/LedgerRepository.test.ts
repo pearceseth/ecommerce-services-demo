@@ -20,8 +20,6 @@ const createTestLedger = (
     currency: "USD",
     paymentAuthorizationId: "auth-456",
     orderId,
-    retryCount: 0,
-    nextRetryAt: null,
     createdAt: now,
     updatedAt: now
   })
@@ -136,7 +134,6 @@ describe("LedgerRepository", () => {
         expect(l.currency).toBe("USD")
         expect(l.paymentAuthorizationId).toBe("auth-456")
         expect(l.orderId).toBe("order-789")
-        expect(l.retryCount).toBe(0)
       }
     })
   })

@@ -31,11 +31,12 @@ const CompensationLive = CompensationExecutorLive.pipe(
   Layer.provide(ClientsLive)
 )
 
-// Service layers (depend on repositories, clients, and compensation executor)
+// Service layers (depend on repositories, clients, config, and compensation executor)
 const ServicesLive = SagaExecutorLive.pipe(
   Layer.provide(RepositoriesLive),
   Layer.provide(ClientsLive),
-  Layer.provide(CompensationLive)
+  Layer.provide(CompensationLive),
+  Layer.provide(OrchestratorConfigLive)
 )
 
 // Complete application layer

@@ -9,8 +9,14 @@ CREATE TABLE IF NOT EXISTS outbox (
     payload JSONB NOT NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-    processed_at TIMESTAMP WITH TIME ZONE
+    processed_at TIMESTAMP WITH TIME ZONE,
+    -- Retry tracking columns
+    retry_count INT NOT NULL DEFAULT 0,
+    next_retry_at TIMESTAMP WITH TIME ZONE
 );
 
 -- Index for efficient pending event queries (used by orchestrator)
 CREATE INDEX IF NOT EXISTS idx_outbox_pending ON outbox(created_at) WHERE status = 'PENDING';
+
+-- Index for retry scheduling queries
+CREATE INDEX IF NOT EXISTS idx_outbox_retry ON outbox(next_retry_at) WHERE status = 'PENDING';

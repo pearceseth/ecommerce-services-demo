@@ -4,6 +4,8 @@ import { SagaExecutor } from "../services/SagaExecutor.js"
 import { SagaExecutorLive } from "../services/SagaExecutorLive.js"
 import { CompensationExecutor, type CompensationContext, type CompensationResult } from "../services/CompensationExecutor.js"
 import { LedgerRepository, type LedgerWithItems } from "../repositories/LedgerRepository.js"
+import { OutboxRepository, type ClaimResult } from "../repositories/OutboxRepository.js"
+import { OrchestratorConfig } from "../config.js"
 import { OrdersClient, type CreateOrderParams, type CreateOrderResult, type ConfirmOrderResult, type CancelOrderResult } from "../clients/OrdersClient.js"
 import { InventoryClient, type ReserveStockParams, type ReserveStockResult, type ReleaseStockParams, type ReleaseStockResult } from "../clients/InventoryClient.js"
 import { PaymentsClient, type CapturePaymentParams, type CapturePaymentResult, type VoidPaymentParams, type VoidPaymentResult } from "../clients/PaymentsClient.js"
@@ -20,7 +22,7 @@ import {
 // Test Fixtures
 // ═══════════════════════════════════════════════════════════════════════════
 
-const createTestOutboxEvent = (ledgerId: string): OutboxEvent => {
+const createTestOutboxEvent = (ledgerId: string, retryCount = 0): OutboxEvent => {
   const now = DateTime.unsafeNow()
   return new OutboxEvent({
     id: `event-${ledgerId}` as OutboxEventId,
@@ -37,7 +39,9 @@ const createTestOutboxEvent = (ledgerId: string): OutboxEvent => {
     },
     status: "PENDING",
     createdAt: now,
-    processedAt: null
+    processedAt: null,
+    retryCount,
+    nextRetryAt: null
   })
 }
 
@@ -57,8 +61,6 @@ const createTestLedger = (
     currency: "USD",
     paymentAuthorizationId: "auth-456",
     orderId,
-    retryCount: 0,
-    nextRetryAt: null,
     createdAt: now,
     updatedAt: now
   })
@@ -79,6 +81,32 @@ const createTestItem = (id: string, ledgerId: string): OrderLedgerItem => {
 // ═══════════════════════════════════════════════════════════════════════════
 // Mock Factories
 // ═══════════════════════════════════════════════════════════════════════════
+
+const createMockConfig = () => {
+  return Layer.succeed(OrchestratorConfig, {
+    pollIntervalMs: 5000,
+    ordersServiceUrl: "http://localhost:3003",
+    inventoryServiceUrl: "http://localhost:3001",
+    paymentsServiceUrl: "http://localhost:3002",
+    maxRetryAttempts: 5,
+    retryBaseDelayMs: 1000,
+    retryBackoffMultiplier: 4
+  })
+}
+
+const createMockOutboxRepo = (overrides: {
+  claimPendingEvents?: (limit?: number) => Effect.Effect<ClaimResult>
+  markProcessed?: (eventId: OutboxEventId) => Effect.Effect<void>
+  markFailed?: (eventId: OutboxEventId) => Effect.Effect<void>
+  scheduleRetry?: (eventId: OutboxEventId, nextRetryAt: DateTime.Utc) => Effect.Effect<{ retryCount: number }>
+} = {}) => {
+  return Layer.succeed(OutboxRepository, {
+    claimPendingEvents: overrides.claimPendingEvents ?? (() => Effect.succeed({ events: [] })),
+    markProcessed: overrides.markProcessed ?? (() => Effect.void),
+    markFailed: overrides.markFailed ?? (() => Effect.void),
+    scheduleRetry: overrides.scheduleRetry ?? (() => Effect.succeed({ retryCount: 1 }))
+  })
+}
 
 const createMockLedgerRepo = (overrides: {
   findByIdWithItems?: (id: OrderLedgerId) => Effect.Effect<Option.Option<LedgerWithItems>>
@@ -162,9 +190,12 @@ const createTestLayer = (
   ordersClientOverrides: Parameters<typeof createMockOrdersClient>[0] = {},
   inventoryClientOverrides: Parameters<typeof createMockInventoryClient>[0] = {},
   paymentsClientOverrides: Parameters<typeof createMockPaymentsClient>[0] = {},
-  compensationExecutorOverrides: Parameters<typeof createMockCompensationExecutor>[0] = {}
+  compensationExecutorOverrides: Parameters<typeof createMockCompensationExecutor>[0] = {},
+  outboxRepoOverrides: Parameters<typeof createMockOutboxRepo>[0] = {}
 ) => {
   return SagaExecutorLive.pipe(
+    Layer.provide(createMockConfig()),
+    Layer.provide(createMockOutboxRepo(outboxRepoOverrides)),
     Layer.provide(createMockLedgerRepo(ledgerRepoOverrides)),
     Layer.provide(createMockOrdersClient(ordersClientOverrides)),
     Layer.provide(createMockInventoryClient(inventoryClientOverrides)),
@@ -371,7 +402,9 @@ describe("SagaExecutor", () => {
         payload: { invalid: "payload" }, // Missing required fields
         status: "PENDING",
         createdAt: DateTime.unsafeNow(),
-        processedAt: null
+        processedAt: null,
+        retryCount: 0,
+        nextRetryAt: null
       })
 
       const testLayer = createTestLayer()
@@ -393,6 +426,7 @@ describe("SagaExecutor", () => {
       const ledgerId = "ledger-123"
       const ledger = createTestLedger(ledgerId, "AUTHORIZED")
       const items = [createTestItem("item-1", ledgerId)]
+      let scheduledRetry = false
 
       const testLayer = createTestLayer(
         { findByIdWithItems: () => Effect.succeed(Option.some({ ledger, items })) },
@@ -403,6 +437,15 @@ describe("SagaExecutor", () => {
             statusCode: 500,
             isRetryable: true
           }))
+        },
+        {},
+        {},
+        {},
+        {
+          scheduleRetry: () => {
+            scheduledRetry = true
+            return Effect.succeed({ retryCount: 1 })
+          }
         }
       )
 
@@ -414,7 +457,10 @@ describe("SagaExecutor", () => {
       expect(result._tag).toBe("RequiresRetry")
       if (result._tag === "RequiresRetry") {
         expect(result.error).toBe("OrderCreationError")
+        expect(result.retryCount).toBe(1)
+        expect(result.nextRetryAt).toBeDefined()
       }
+      expect(scheduledRetry).toBe(true)
     })
 
     it("should return RequiresRetry for ServiceConnectionError", async () => {
@@ -432,6 +478,11 @@ describe("SagaExecutor", () => {
             reason: "Connection timeout",
             isRetryable: true
           }))
+        },
+        {},
+        {},
+        {
+          scheduleRetry: () => Effect.succeed({ retryCount: 1 })
         }
       )
 
@@ -461,6 +512,10 @@ describe("SagaExecutor", () => {
             statusCode: 503,
             isRetryable: true
           }))
+        },
+        {},
+        {
+          scheduleRetry: () => Effect.succeed({ retryCount: 1 })
         }
       )
 
@@ -637,6 +692,45 @@ describe("SagaExecutor", () => {
         expect(result.compensationSteps).toContain("void_payment")
         expect(result.compensationSteps).toContain("cancel_order")
       }
+    })
+  })
+
+  describe("executeSaga - max retries exceeded", () => {
+    it("should trigger compensation when max retries reached", async () => {
+      const ledgerId = "ledger-123"
+      const ledger = createTestLedger(ledgerId, "AUTHORIZED")
+      const items = [createTestItem("item-1", ledgerId)]
+      const statusUpdates: OrderLedgerStatus[] = []
+
+      // Config with maxRetryAttempts=5, current retryCount=5 (already exhausted)
+      const testLayer = createTestLayer(
+        {
+          findByIdWithItems: () => Effect.succeed(Option.some({ ledger, items })),
+          updateStatus: (id, status) => {
+            statusUpdates.push(status)
+            return Effect.succeed(createTestLedger(id, status))
+          }
+        },
+        {
+          createOrder: () => Effect.fail(new OrderCreationError({
+            orderLedgerId: ledgerId,
+            reason: "Server error",
+            statusCode: 500,
+            isRetryable: true  // Retryable but max retries exceeded
+          }))
+        }
+      )
+
+      // Pass event with retryCount=5 (already at max)
+      const result = await Effect.gen(function* () {
+        const executor = yield* SagaExecutor
+        return yield* executor.executeSaga(createTestOutboxEvent(ledgerId, 5))
+      }).pipe(Effect.provide(testLayer), Effect.runPromise)
+
+      // Should compensate instead of retry
+      expect(result._tag).toBe("Compensated")
+      expect(statusUpdates).toContain("COMPENSATING")
+      expect(statusUpdates).toContain("FAILED")
     })
   })
 

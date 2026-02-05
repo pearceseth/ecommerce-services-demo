@@ -1,38 +1,70 @@
-import { Layer, Effect, Option, Schema } from "effect"
+import { Layer, Effect, Option, Schema, DateTime } from "effect"
 import { SagaExecutor, type SagaExecutionResult, type SagaCompleted, type SagaFailed, type SagaRequiresRetry, type SagaCompensated } from "./SagaExecutor.js"
 import { CompensationExecutor } from "./CompensationExecutor.js"
 import { LedgerRepository } from "../repositories/LedgerRepository.js"
+import { OutboxRepository } from "../repositories/OutboxRepository.js"
 import { OrdersClient } from "../clients/OrdersClient.js"
 import { InventoryClient } from "../clients/InventoryClient.js"
 import { PaymentsClient } from "../clients/PaymentsClient.js"
-import { OutboxEvent, OrderAuthorizedPayload } from "../domain/OutboxEvent.js"
+import { OrchestratorConfig } from "../config.js"
+import { OutboxEvent, OrderAuthorizedPayload, type OutboxEventId } from "../domain/OutboxEvent.js"
 import type { OrderLedger, OrderLedgerItem, OrderLedgerId, OrderLedgerStatus } from "../domain/OrderLedger.js"
 import { InvalidPayloadError, type SagaStepError } from "../domain/errors.js"
+import {
+  calculateNextRetryAt,
+  isMaxRetriesExceeded,
+  type RetryPolicy
+} from "../domain/RetryPolicy.js"
 
 type StepResult =
   | { readonly _tag: "StepSuccess"; readonly orderId?: string }
   | { readonly _tag: "StepFailed"; readonly result: SagaExecutionResult }
 
 interface HandleStepErrorParams {
+  readonly eventId: OutboxEventId
   readonly orderLedgerId: string
   readonly currentStatus: OrderLedgerStatus
   readonly orderId: string | null
   readonly paymentAuthorizationId: string | null
   readonly error: SagaStepError
+  readonly currentRetryCount: number
+  readonly retryPolicy: RetryPolicy
 }
 
 const handleStepError = (
   params: HandleStepErrorParams
-): Effect.Effect<StepResult, never, CompensationExecutor | LedgerRepository> =>
+): Effect.Effect<StepResult, never, CompensationExecutor | LedgerRepository | OutboxRepository> =>
   Effect.gen(function* () {
-    const { orderLedgerId, currentStatus, orderId, paymentAuthorizationId, error } = params
+    const {
+      eventId,
+      orderLedgerId,
+      currentStatus,
+      orderId,
+      paymentAuthorizationId,
+      error,
+      currentRetryCount,
+      retryPolicy
+    } = params
+
     const isRetryable = "isRetryable" in error && error.isRetryable
 
-    if (isRetryable) {
-      yield* Effect.logWarning("Saga step failed with retryable error", {
+    if (isRetryable && !isMaxRetriesExceeded(currentRetryCount, retryPolicy.maxAttempts)) {
+      // Schedule retry via outbox
+      const outboxRepo = yield* OutboxRepository
+      const nextAttemptNumber = currentRetryCount + 2 // +1 for increment, +1 for next attempt
+      const nextRetryAt = calculateNextRetryAt(nextAttemptNumber, retryPolicy)
+
+      const { retryCount: newRetryCount } = yield* outboxRepo.scheduleRetry(eventId, nextRetryAt)
+
+      yield* Effect.logWarning("Saga step failed - scheduled retry", {
         orderLedgerId,
+        eventId,
         errorType: error._tag,
-        willRetry: true
+        errorReason: "reason" in error ? error.reason : "unknown",
+        retryCount: newRetryCount,
+        nextRetryAt: DateTime.formatIso(nextRetryAt),
+        maxAttempts: retryPolicy.maxAttempts,
+        attemptsRemaining: retryPolicy.maxAttempts - newRetryCount
       })
 
       return {
@@ -41,22 +73,31 @@ const handleStepError = (
           _tag: "RequiresRetry",
           orderLedgerId,
           finalStatus: currentStatus,
-          error: error._tag
+          error: error._tag,
+          retryCount: newRetryCount,
+          nextRetryAt,
+          isLastAttempt: newRetryCount >= retryPolicy.maxAttempts - 1
         } satisfies SagaRequiresRetry
       } satisfies StepResult
     }
 
-    // Permanent failure - execute compensation
-    yield* Effect.logError("Saga step failed with permanent error - starting compensation", {
+    // Permanent failure OR max retries exceeded - execute compensation
+    const failureReason = isRetryable ? "max_retries_exceeded" : "permanent_failure"
+
+    yield* Effect.logError("Saga step failed - starting compensation", {
       orderLedgerId,
+      eventId,
       errorType: error._tag,
+      errorReason: "reason" in error ? error.reason : "unknown",
+      failureReason,
+      totalAttempts: currentRetryCount + 1,
       lastSuccessfulStatus: currentStatus
     })
 
     const ledgerRepo = yield* LedgerRepository
     const compensationExecutor = yield* CompensationExecutor
 
-    // Transition to COMPENSATING
+    // Transition ledger to COMPENSATING
     yield* ledgerRepo.updateStatus(orderLedgerId as OrderLedgerId, "COMPENSATING")
 
     // Execute compensation
@@ -67,7 +108,7 @@ const handleStepError = (
       lastSuccessfulStatus: currentStatus
     })
 
-    // Transition to FAILED
+    // Transition ledger to FAILED
     yield* ledgerRepo.updateStatus(orderLedgerId as OrderLedgerId, "FAILED")
 
     return {
@@ -85,25 +126,40 @@ export const SagaExecutorLive = Layer.effect(
   SagaExecutor,
   Effect.gen(function* () {
     const ledgerRepo = yield* LedgerRepository
+    const outboxRepo = yield* OutboxRepository
     const ordersClient = yield* OrdersClient
     const inventoryClient = yield* InventoryClient
     const paymentsClient = yield* PaymentsClient
     const compensationExecutor = yield* CompensationExecutor
+    const config = yield* OrchestratorConfig
+
+    // Build retry policy from config
+    const retryPolicy: RetryPolicy = {
+      maxAttempts: config.maxRetryAttempts,
+      baseDelayMs: config.retryBaseDelayMs,
+      backoffMultiplier: config.retryBackoffMultiplier
+    }
 
     const executeSagaSteps = (
+      event: OutboxEvent,
       ledger: OrderLedger,
       items: readonly OrderLedgerItem[],
       payload: OrderAuthorizedPayload
     ): Effect.Effect<SagaExecutionResult> =>
       Effect.gen(function* () {
+        const eventId = event.id
         const orderLedgerId = ledger.id
         const paymentAuthorizationId = payload.payment_authorization_id
         let currentStatus = ledger.status
         let orderId: string | null = ledger.orderId
+        const currentRetryCount = event.retryCount  // Retry count from outbox, not ledger
 
         // Step 1: Create Order (if not already created)
         if (currentStatus === "AUTHORIZED") {
-          yield* Effect.logInfo("Executing Step 1: Create Order", { orderLedgerId })
+          yield* Effect.logInfo("Executing Step 1: Create Order", {
+            orderLedgerId,
+            attempt: currentRetryCount + 1
+          })
 
           const stepResult = yield* ordersClient.createOrder({
             orderLedgerId,
@@ -121,11 +177,14 @@ export const SagaExecutorLive = Layer.effect(
               orderId: result.orderId
             })),
             Effect.catchAll((error) => handleStepError({
+              eventId,
               orderLedgerId,
               currentStatus,
               orderId,
               paymentAuthorizationId,
-              error
+              error,
+              currentRetryCount,
+              retryPolicy
             }))
           )
 
@@ -141,7 +200,11 @@ export const SagaExecutorLive = Layer.effect(
 
         // Step 2: Reserve Inventory (if not already reserved)
         if (currentStatus === "ORDER_CREATED") {
-          yield* Effect.logInfo("Executing Step 2: Reserve Inventory", { orderLedgerId, orderId })
+          yield* Effect.logInfo("Executing Step 2: Reserve Inventory", {
+            orderLedgerId,
+            orderId,
+            attempt: currentRetryCount + 1
+          })
 
           const stepResult = yield* inventoryClient.reserveStock({
             orderId: orderId!,
@@ -152,11 +215,14 @@ export const SagaExecutorLive = Layer.effect(
           }).pipe(
             Effect.map((): StepResult => ({ _tag: "StepSuccess" })),
             Effect.catchAll((error) => handleStepError({
+              eventId,
               orderLedgerId,
               currentStatus,
               orderId,
               paymentAuthorizationId,
-              error
+              error,
+              currentRetryCount,
+              retryPolicy
             }))
           )
 
@@ -171,7 +237,10 @@ export const SagaExecutorLive = Layer.effect(
 
         // Step 3: Capture Payment (if not already captured)
         if (currentStatus === "INVENTORY_RESERVED") {
-          yield* Effect.logInfo("Executing Step 3: Capture Payment", { orderLedgerId })
+          yield* Effect.logInfo("Executing Step 3: Capture Payment", {
+            orderLedgerId,
+            attempt: currentRetryCount + 1
+          })
 
           const stepResult = yield* paymentsClient.capturePayment({
             authorizationId: paymentAuthorizationId,
@@ -179,11 +248,14 @@ export const SagaExecutorLive = Layer.effect(
           }).pipe(
             Effect.map((): StepResult => ({ _tag: "StepSuccess" })),
             Effect.catchAll((error) => handleStepError({
+              eventId,
               orderLedgerId,
               currentStatus,
               orderId,
               paymentAuthorizationId,
-              error
+              error,
+              currentRetryCount,
+              retryPolicy
             }))
           )
 
@@ -198,16 +270,23 @@ export const SagaExecutorLive = Layer.effect(
 
         // Step 4: Confirm Order (final step)
         if (currentStatus === "PAYMENT_CAPTURED") {
-          yield* Effect.logInfo("Executing Step 4: Confirm Order", { orderLedgerId, orderId })
+          yield* Effect.logInfo("Executing Step 4: Confirm Order", {
+            orderLedgerId,
+            orderId,
+            attempt: currentRetryCount + 1
+          })
 
           const stepResult = yield* ordersClient.confirmOrder(orderId!).pipe(
             Effect.map((): StepResult => ({ _tag: "StepSuccess" })),
             Effect.catchAll((error) => handleStepError({
+              eventId,
               orderLedgerId,
               currentStatus,
               orderId,
               paymentAuthorizationId,
-              error
+              error,
+              currentRetryCount,
+              retryPolicy
             }))
           )
 
@@ -228,6 +307,7 @@ export const SagaExecutorLive = Layer.effect(
         } satisfies SagaCompleted
       }).pipe(
         Effect.provideService(LedgerRepository, ledgerRepo),
+        Effect.provideService(OutboxRepository, outboxRepo),
         Effect.provideService(CompensationExecutor, compensationExecutor)
       )
 
@@ -240,7 +320,9 @@ export const SagaExecutorLive = Layer.effect(
           yield* Effect.logInfo("Starting saga execution", {
             eventId,
             aggregateId,
-            eventType: event.eventType
+            eventType: event.eventType,
+            retryCount: event.retryCount,
+            isRetry: event.retryCount > 0
           })
 
           // 1. Parse the payload
@@ -304,11 +386,16 @@ export const SagaExecutorLive = Layer.effect(
           }
 
           // 4. Execute saga steps based on current status
-          const sagaResult = yield* executeSagaSteps(ledger, items, payload)
+          const sagaResult = yield* executeSagaSteps(event, ledger, items, payload)
 
           return sagaResult
         }).pipe(
-          Effect.withSpan("saga-execution", { attributes: { eventId: event.id } }),
+          Effect.withSpan("saga-execution", {
+            attributes: {
+              eventId: event.id,
+              retryCount: event.retryCount
+            }
+          }),
           Effect.catchTag("InvalidPayloadError", (error) =>
             Effect.succeed({
               _tag: "Failed",

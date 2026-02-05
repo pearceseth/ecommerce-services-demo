@@ -1,4 +1,4 @@
-import { Effect, Schedule, Duration, Queue, Data, Match } from "effect"
+import { Effect, Schedule, Duration, Queue, Data, Match, DateTime } from "effect"
 import { PgClient } from "@effect/sql-pg"
 import { SqlClient } from "@effect/sql"
 import pg from "pg"
@@ -43,10 +43,14 @@ export const processEvents = Effect.gen(function* () {
         yield* Match.value(result).pipe(
           Match.tag("Completed", () => outboxRepo.markProcessed(event.id)),
           Match.tag("Failed", () => outboxRepo.markFailed(event.id)),
-          Match.tag("RequiresRetry", ({ error }) =>
-            Effect.logInfo("Event will be retried", {
+          Match.tag("RequiresRetry", ({ error, retryCount, nextRetryAt, isLastAttempt }) =>
+            Effect.logInfo("Event scheduled for retry", {
               eventId: event.id,
-              reason: error
+              reason: error,
+              retryCount,
+              nextRetryAt: DateTime.formatIso(nextRetryAt),
+              isLastAttempt,
+              note: "Event remains PENDING with future next_retry_at"
             })
           ),
           Match.tag("Compensated", ({ orderLedgerId, compensationSteps }) =>

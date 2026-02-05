@@ -31,5 +31,8 @@ export class OutboxEvent extends Schema.Class<OutboxEvent>("OutboxEvent")({
   payload: Schema.Unknown,
   status: OutboxEventStatus,
   createdAt: Schema.DateTimeUtc,
-  processedAt: Schema.NullOr(Schema.DateTimeUtc)
+  processedAt: Schema.NullOr(Schema.DateTimeUtc),
+  // Retry tracking fields (coordination lives in outbox, not ledger)
+  retryCount: Schema.Number,
+  nextRetryAt: Schema.NullOr(Schema.DateTimeUtc)
 }) {}

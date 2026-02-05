@@ -7,6 +7,10 @@ export class OrchestratorConfig extends Context.Tag("OrchestratorConfig")<
     readonly ordersServiceUrl: string
     readonly inventoryServiceUrl: string
     readonly paymentsServiceUrl: string
+    // Retry configuration (matching engineering-design.md Section 4.5)
+    readonly maxRetryAttempts: number
+    readonly retryBaseDelayMs: number
+    readonly retryBackoffMultiplier: number
   }
 >() {}
 
@@ -25,6 +29,16 @@ export const OrchestratorConfigLive = Layer.effect(
       ),
       paymentsServiceUrl: yield* Config.string("PAYMENTS_SERVICE_URL").pipe(
         Config.withDefault("http://localhost:3002")
+      ),
+      // Retry defaults matching engineering-design.md Section 4.5
+      maxRetryAttempts: yield* Config.number("MAX_RETRY_ATTEMPTS").pipe(
+        Config.withDefault(5)
+      ),
+      retryBaseDelayMs: yield* Config.number("RETRY_BASE_DELAY_MS").pipe(
+        Config.withDefault(1000)
+      ),
+      retryBackoffMultiplier: yield* Config.number("RETRY_BACKOFF_MULTIPLIER").pipe(
+        Config.withDefault(4)
       )
     }
   })
